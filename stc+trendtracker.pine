@@ -1,0 +1,107 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// converted from original to this new style with new addons by upslidedown
+//@version=5
+//
+
+//[SHK] STC colored indicator
+//https://www.tradingview.com/u/shayankm/
+
+indicator(title='STC+TrendTrader [upslidedown]', overlay=false)
+EEEEEE = input(12, 'Length')
+BBBB = input(26, 'FastLength')
+BBBBB = input(50, 'SlowLength')
+require_threshold = input.bool(false)
+threshold = input.int(10, step=5)
+
+low_threshold = threshold
+high_threshold = 100 - threshold
+
+AAAA(BBB, BBBB, BBBBB) =>
+    fastMA = ta.ema(BBB, BBBB)
+    slowMA = ta.ema(BBB, BBBBB)
+    AAAA = fastMA - slowMA
+    AAAA
+
+AAAAA(EEEEEE, BBBB, BBBBB) =>
+    AAA = input(0.5)
+    var CCCCC = 0.0
+    var DDD = 0.0
+    var DDDDDD = 0.0
+    var EEEEE = 0.0
+    BBBBBB = AAAA(close, BBBB, BBBBB)
+    CCC = ta.lowest(BBBBBB, EEEEEE)
+    CCCC = ta.highest(BBBBBB, EEEEEE) - CCC
+    CCCCC := CCCC > 0 ? (BBBBBB - CCC) / CCCC * 100 : nz(CCCCC[1])
+    DDD := na(DDD[1]) ? CCCCC : DDD[1] + AAA * (CCCCC - DDD[1])
+    DDDD = ta.lowest(DDD, EEEEEE)
+    DDDDD = ta.highest(DDD, EEEEEE) - DDDD
+    DDDDDD := DDDDD > 0 ? (DDD - DDDD) / DDDDD * 100 : nz(DDDDDD[1])
+    EEEEE := na(EEEEE[1]) ? DDDDDD : EEEEE[1] + AAA * (DDDDDD - EEEEE[1])
+    EEEEE
+
+mAAAAA = AAAAA(EEEEEE, BBBB, BBBBB)
+mColor = mAAAAA > mAAAAA[1] ? color.new(color.blue, 20) : color.new(color.red, 20)
+
+bull_cross = false
+bear_cross = false
+if require_threshold
+    bull_cross := ta.crossover(mAAAAA, low_threshold) and not bull_cross[1]
+    bear_cross := ta.crossunder(mAAAAA, high_threshold) and not bear_cross[1]
+else 
+    bull_cross := mAAAAA > mAAAAA[1]
+    bear_cross := mAAAAA < mAAAAA[1]
+//bull_cross =  ? 
+//bull_cross := not require_threshold ? bull_cross and not bull_cross[1] : bull_cross
+//bear_cross = require_threshold ? ta.crossunder(mAAAAA, high_threshold) : 
+//bull_cross := not require_threshold ? bear_cross and not bear_cross[1] : bear_cross
+
+
+//plotchar(bull_cross, location=location.bottom, color=color.blue)
+//plotchar(bear_cross, location=location.top, color=color.red)
+
+plot(mAAAAA, color=mColor, title='STC', linewidth=2)
+
+ul = plot(low_threshold, color=color.new(color.gray, 70))
+ll = plot(high_threshold, color=color.new(color.gray, 70))
+fill(ul, ll, color=color.new(color.gray, 96))
+
+
+
+
+// Trend Trader Strategy
+//  Copyright by HPotter v1.0 21/01/2021
+// This is plots the indicator developed by Andrew Abraham 
+
+Length = input.int(21, minval=1)
+Multiplier = input.float(3, minval=0.000001)
+avgTR = ta.wma(ta.atr(1), Length)
+highestC = ta.highest(Length)
+lowestC = ta.lowest(Length)
+hiLimit = highestC[1] - avgTR[1] * Multiplier
+loLimit = lowestC[1] + avgTR[1] * Multiplier
+ret = 0.0
+pos = 0.0
+ret:= close > hiLimit and close > loLimit ? hiLimit :
+         close < loLimit and close < hiLimit ? loLimit : nz(ret[1], close)
+pos:=  close > ret ? 1 :close < ret ? -1 : nz(pos[1], 0)
+if pos != pos[1] and pos == 1
+    alert("Color changed - Buy", alert.freq_once_per_bar_close)
+if pos != pos[1] and pos == -1
+    alert("Color changed - Sell", alert.freq_once_per_bar_close)
+//barcolor(pos == -1 ? color.red : pos == 1 ? color.green : color.blue)
+//plot(ret, color=color.new(color.blue, 0), title='Trend Trader Strategy')
+
+longc_tt = pos == 1 and pos[1] == -1
+shortc_tt = pos == -1 and pos[1] == 1
+
+
+plotshape(longc_tt, "Trend Trader Long", style=shape.triangleup, location=location.bottom, size=size.small, color=color.blue)
+plotshape(shortc_tt, "Trend Trader Short", style=shape.triangledown, location=location.top, size=size.small, color=color.red)
+
+
+longc = bull_cross and longc_tt
+shortc = bear_cross and shortc_tt
+
+strategy = longc ? 1 : shortc ? -1 : 0
+
+plot(strategy, "Strategy Signal", display=display.none)
