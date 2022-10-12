@@ -1,0 +1,151 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © myn
+
+//@version=5
+strategy('Strategy Backtesting Template + External [MYN]', max_bars_back=5000, overlay=true, pyramiding=0, initial_capital=20000, currency='USD', default_qty_type=strategy.percent_of_equity, default_qty_value=100.0, commission_value=0.075, use_bar_magnifier = true)
+
+
+/////////////////////////////////////
+//* Put your strategy logic below *//
+/////////////////////////////////////
+
+// Below is a very simple example to demonstrate the trading template
+
+external = input.source(close, "External Indicator Source", tooltip="If you see no entries, it is because you have not assigned this to a strategy input")
+
+longConditionEntry = external == 1
+shortConditionEntry = external == -1
+
+longConditionExit = external == 2
+shortConditionExit = external == -2
+
+
+//////////////////////////////////////
+//* Put your strategy rules below *//
+/////////////////////////////////////
+
+longCondition =  longConditionEntry         // default: false
+shortCondition = shortConditionEntry         // default: false
+
+//define as 0 if do not want to have a conditional close
+closeLongCondition = longConditionExit      // default: 0
+closeShortCondition = shortConditionExit    // default: 0
+
+
+// ADX
+//░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+adxEnabled = input.bool(defval = false , title = "Average Directional Index (ADX)", tooltip = "", group ="ADX" ) 
+adxlen = input(14, title="ADX Smoothing", group="ADX")
+adxdilen = input(14, title="DI Length", group="ADX")
+adxabove = input(25, title="ADX Threshold", group="ADX")
+
+adxdirmov(len) =>
+	adxup = ta.change(high)
+	adxdown = -ta.change(low)
+	adxplusDM = na(adxup) ? na : (adxup > adxdown and adxup > 0 ? adxup : 0)
+	adxminusDM = na(adxdown) ? na : (adxdown > adxup and adxdown > 0 ? adxdown : 0)
+	adxtruerange = ta.rma(ta.tr, len)
+	adxplus = fixnan(100 * ta.rma(adxplusDM, len) / adxtruerange)
+	adxminus = fixnan(100 * ta.rma(adxminusDM, len) / adxtruerange)
+	[adxplus, adxminus]
+adx(adxdilen, adxlen) =>
+	[adxplus, adxminus] = adxdirmov(adxdilen)
+	adxsum = adxplus + adxminus
+	adx = 100 * ta.rma(math.abs(adxplus - adxminus) / (adxsum == 0 ? 1 : adxsum), adxlen)
+
+adxsig = adxEnabled ? adx(adxdilen, adxlen) : na
+plot(adxEnabled ? adxsig : na, color=color.red, title="ADX")
+isADXEnabledAndAboveThreshold = adxEnabled ? (adxsig > adxabove) : true
+
+//Backtesting Time Period (Input.time not working as expected as of 03/30/2021.  Giving odd start/end dates
+//░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+useStartPeriodTime = input.bool(true, 'Start', group='Date Range', inline='Start Period')
+startPeriodTime = input.time(timestamp('1 Jan 2019'), '', group='Date Range', inline='Start Period')
+useEndPeriodTime = input.bool(true, 'End', group='Date Range', inline='End Period')
+endPeriodTime = input.time(timestamp('31 Dec 2030'), '', group='Date Range', inline='End Period')
+
+start = useStartPeriodTime ? startPeriodTime >= time : false
+end = useEndPeriodTime ? endPeriodTime <= time : false
+calcPeriod = not start and not end
+
+// Trade Direction 
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+tradeDirection = input.string('Long and Short', title='Trade Direction', options=['Long and Short', 'Long Only', 'Short Only'], group='Trade Direction')
+
+// Percent as Points
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+per(pcnt) =>
+    strategy.position_size != 0 ? math.round(pcnt / 100 * strategy.position_avg_price / syminfo.mintick) : float(na)
+
+// Take profit 1
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+tp1 = input.float(title='Take Profit 1 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 1')
+q1 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 1')
+
+// Take profit 2
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+tp2 = input.float(title='Take Profit 2 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 2')
+q2 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 2')
+
+// Take profit 3
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+tp3 = input.float(title='Take Profit 3 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 3')
+q3 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 3')
+
+// Take profit 4
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+tp4 = input.float(title='Take Profit 4 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit')
+
+/// Stop Loss
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+stoplossPercent = input.float(title='Stop Loss (%)', defval=15, minval=0.01, group='Stop Loss') * 0.01
+slLongClose = close < strategy.position_avg_price * (1 - stoplossPercent)
+slShortClose = close > strategy.position_avg_price * (1 + stoplossPercent)
+
+/// Leverage
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+leverage = input.float(1, 'Leverage', step=.5, group='Leverage')
+contracts = math.min(math.max(.000001, strategy.equity / close * leverage), 1000000000)
+
+
+/// Trade State Management
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+isInLongPosition = strategy.position_size > 0
+isInShortPosition = strategy.position_size < 0
+
+/// ProfitView Alert Syntax String Generation
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+alertSyntaxPrefix = input.string(defval='PV_Strategy-Name-Here', title='Alert Syntax Prefix', group='ProfitView Alert Syntax')
+alertSyntaxBase = alertSyntaxPrefix + '\n#' + str.tostring(open) + ',' + str.tostring(high) + ',' + str.tostring(low) + ',' + str.tostring(close) + ',' + str.tostring(volume) + ','
+
+
+/// Trade Execution
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+longConditionCalc = (longCondition and isADXEnabledAndAboveThreshold)
+shortConditionCalc = (shortCondition and isADXEnabledAndAboveThreshold)
+
+if calcPeriod
+    if longConditionCalc and tradeDirection != 'Short Only' and isInLongPosition == false
+        strategy.entry('Long', strategy.long, qty=contracts)
+
+        alert(message=alertSyntaxBase + 'side:long', freq=alert.freq_once_per_bar_close)
+
+    if shortConditionCalc and tradeDirection != 'Long Only' and isInShortPosition == false
+        strategy.entry('Short', strategy.short, qty=contracts)
+
+        alert(message=alertSyntaxBase + 'side:short', freq=alert.freq_once_per_bar_close)
+    
+    //Inspired from Multiple %% profit exits example by adolgo https://www.tradingview.com/script/kHhCik9f-Multiple-profit-exits-example/
+    strategy.exit('TP1', qty_percent=q1, profit=per(tp1))
+    strategy.exit('TP2', qty_percent=q2, profit=per(tp2))
+    strategy.exit('TP3', qty_percent=q3, profit=per(tp3))
+    strategy.exit('TP4', profit=per(tp4))
+
+    strategy.close('Long', qty_percent=100, comment='SL Long', when=slLongClose)
+    strategy.close('Short', qty_percent=100, comment='SL Short', when=slShortClose)
+
+    strategy.close_all(when=closeLongCondition or closeShortCondition, comment='Close Postion')
