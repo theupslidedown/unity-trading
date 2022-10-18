@@ -1,62 +1,83 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
-// © myn
+// © myn 
 
 //@version=5
-strategy('Strategy Backtesting Template + External [MYN]', max_bars_back=5000, overlay=true, pyramiding=0, initial_capital=20000, currency='USD', default_qty_type=strategy.percent_of_equity, default_qty_value=100.0, commission_value=0.075, use_bar_magnifier = true)
-
+strategy('Backtester For Anything [UT]', max_bars_back=5000, overlay=true, pyramiding=0, initial_capital=20000, currency='USD', default_qty_type=strategy.percent_of_equity, default_qty_value=100.0, commission_value=0.075, use_bar_magnifier = false)
+// 04-03-2022 Added ADX 
+// 08-17-2022 Added Dashboard
+// 10-16-2022 Added Masanakamura ADX and EMA Filter
 
 /////////////////////////////////////
 //* Put your strategy logic below *//
 /////////////////////////////////////
 
-// Below is a very simple example to demonstrate the trading template
 
-external = input.source(close, "External Indicator Source", tooltip="If you see no entries, it is because you have not assigned this to a strategy input")
-
-longConditionEntry = external == 1
-shortConditionEntry = external == -1
-
-longConditionExit = external == 2
-shortConditionExit = external == -2
-
+    
 
 //////////////////////////////////////
 //* Put your strategy rules below *//
 /////////////////////////////////////
 
-longCondition =  longConditionEntry         // default: false
-shortCondition = shortConditionEntry         // default: false
+longCondition = false
+shortCondition = false
 
-//define as 0 if do not want to have a conditional close
-closeLongCondition = longConditionExit      // default: 0
-closeShortCondition = shortConditionExit    // default: 0
+//define as 0 if do not want to use
+closeLongCondition = false
+closeShortCondition = false
 
 
-// ADX
+
+external = input.source(close, "External Signal", tooltip="Assign this if you would like to allow an external indicator to send entry/exit signals.\n\n 1: Enter Long\n-1: Enter Short\n 2: Exit Long\n-2: Exit Short")
+if external != close
+    longCondition := external == 1
+    shortCondition := external == -1
+    closeLongCondition := external == 2
+    closeShortCondition := external == -2
+
+
+
+// EMA Filter
 //░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-adxEnabled = input.bool(defval = false , title = "Average Directional Index (ADX)", tooltip = "", group ="ADX" ) 
-adxlen = input(14, title="ADX Smoothing", group="ADX")
-adxdilen = input(14, title="DI Length", group="ADX")
-adxabove = input(25, title="ADX Threshold", group="ADX")
+i_emaFilterEnabled = input.bool(defval = false , title = "Enable EMA Filter", tooltip = "Enable if you would like to conditionally have entries incorporate EMA as a filter where source is above/below the EMA line", group ="EMA Filter" ) 
+i_emaLength = input.int(200, title="EMA Length", minval=1, group ="EMA Filter")
+//i_emaSource = input.source(close,"EMA Source" , group ="EMA Filter")
+i_emaSource = close
+emaValue = i_emaFilterEnabled ? ta.ema(i_emaSource, i_emaLength) : na
+bool isEMAFilterEnabledAndCloseAboveMA = i_emaFilterEnabled ? i_emaSource > emaValue : true
+bool isEMAFilterEnabledAndCloseBelowMA = i_emaFilterEnabled ? i_emaSource < emaValue : true
 
-adxdirmov(len) =>
-	adxup = ta.change(high)
-	adxdown = -ta.change(low)
-	adxplusDM = na(adxup) ? na : (adxup > adxdown and adxup > 0 ? adxup : 0)
-	adxminusDM = na(adxdown) ? na : (adxdown > adxup and adxdown > 0 ? adxdown : 0)
-	adxtruerange = ta.rma(ta.tr, len)
-	adxplus = fixnan(100 * ta.rma(adxplusDM, len) / adxtruerange)
-	adxminus = fixnan(100 * ta.rma(adxminusDM, len) / adxtruerange)
-	[adxplus, adxminus]
-adx(adxdilen, adxlen) =>
-	[adxplus, adxminus] = adxdirmov(adxdilen)
-	adxsum = adxplus + adxminus
-	adx = 100 * ta.rma(math.abs(adxplus - adxminus) / (adxsum == 0 ? 1 : adxsum), adxlen)
 
-adxsig = adxEnabled ? adx(adxdilen, adxlen) : na
-plot(adxEnabled ? adxsig : na, color=color.red, title="ADX")
-isADXEnabledAndAboveThreshold = adxEnabled ? (adxsig > adxabove) : true
+// ADX Filter
+//░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+i_adxFilterEnabled = input.bool(defval = false , title = "Enable ADX Filter", tooltip = "Enable if you would like to conditionally have entries incorporate ADX as a filter", group ="ADX Filter" ) 
+i_adxVariant = input.string('ORIGINAL', title='ADX Variant', options=['ORIGINAL', 'MASANAKAMURA'], group ="ADX Filter" )
+i_adxSmoothing = input.int(14, title="ADX Smoothing", group="ADX Filter")
+i_adxDILength = input.int(14, title="DI Length", group="ADX Filter")
+i_adxLowerThreshold = input.float(25, title="ADX Threshold", step=.5, group="ADX Filter")
+
+calcADX_Masanakamura(int _len) =>
+    _smoothedTrueRange = 0.0
+    _smoothedDirectionalMovementPlus = 0.0
+    _smoothed_directionalMovementMinus = 0.0
+    _trueRange = math.max(math.max(high - low, math.abs(high - nz(close[1]))), math.abs(low - nz(close[1])))
+    _directionalMovementPlus = high - nz(high[1]) > nz(low[1]) - low ? math.max(high - nz(high[1]), 0) : 0
+    _directionalMovementMinus = nz(low[1]) - low > high - nz(high[1]) ? math.max(nz(low[1]) - low, 0) : 0
+    _smoothedTrueRange := nz(_smoothedTrueRange[1]) - nz(_smoothedTrueRange[1]) / _len + _trueRange
+    _smoothedDirectionalMovementPlus := nz(_smoothedDirectionalMovementPlus[1]) - nz(_smoothedDirectionalMovementPlus[1]) / _len + _directionalMovementPlus
+    _smoothed_directionalMovementMinus := nz(_smoothed_directionalMovementMinus[1]) - nz(_smoothed_directionalMovementMinus[1]) / _len + _directionalMovementMinus
+    DIP = _smoothedDirectionalMovementPlus / _smoothedTrueRange * 100
+    DIM = _smoothed_directionalMovementMinus / _smoothedTrueRange * 100
+    _DX = math.abs(DIP - DIM) / (DIP + DIM) * 100
+    adx = ta.sma(_DX, _len)
+    [DIP, DIM, adx]
+
+[DIPlusO, DIMinusO, ADXO] = ta.dmi(i_adxDILength, i_adxSmoothing)
+[DIPlusM, DIMinusM, ADXM] = calcADX_Masanakamura(i_adxDILength)
+
+adx = i_adxFilterEnabled and i_adxVariant == "ORIGINAL" ? ADXO : ADXM
+bool isADXFilterEnabledAndAboveThreshold = i_adxFilterEnabled ? adx > i_adxLowerThreshold : true
 
 //Backtesting Time Period (Input.time not working as expected as of 03/30/2021.  Giving odd start/end dates
 //░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -78,31 +99,43 @@ tradeDirection = input.string('Long and Short', title='Trade Direction', options
 per(pcnt) =>
     strategy.position_size != 0 ? math.round(pcnt / 100 * strategy.position_avg_price / syminfo.mintick) : float(na)
 
+confirm_tp = input.bool(false, "Require bar close to take profits", group='Take Profit')
+
 // Take profit 1
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-tp1 = input.float(title='Take Profit 1 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 1')
+tp1 = input.float(title='Take Profit 1 - Target %', defval=2, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 1')
 q1 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 1')
+
+tp = strategy.position_size[1] > 0 ? strategy.position_avg_price * (1 + (tp1*0.01)) : strategy.position_size[1] < 0 ? strategy.position_avg_price * (1 - (tp1*0.01)) : na
+
+tpLongClose = close > tp
+tpShortClose = close < tp
+plot(tp, "TP", style=plot.style_linebr)
 
 // Take profit 2
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-tp2 = input.float(title='Take Profit 2 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 2')
-q2 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 2')
+//tp2 = input.float(title='Take Profit 2 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 2')
+//q2 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 2')
 
 // Take profit 3
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-tp3 = input.float(title='Take Profit 3 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 3')
-q3 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 3')
+//tp3 = input.float(title='Take Profit 3 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit', inline='Take Profit 3')
+//q3 = input.int(title='% Of Position', defval=100, minval=0, group='Take Profit', inline='Take Profit 3')
 
 // Take profit 4
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-tp4 = input.float(title='Take Profit 4 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit')
+//tp4 = input.float(title='Take Profit 4 - Target %', defval=100, minval=0.0, step=0.5, group='Take Profit')
 
 /// Stop Loss
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-stoplossPercent = input.float(title='Stop Loss (%)', defval=15, minval=0.01, group='Stop Loss') * 0.01
+confirm_sl = input.bool(false, "Require bar close for stop loss", group='Stop Loss')
+
+stoplossPercent = input.float(title='Stop Loss (%)', defval=1, minval=0.01, group='Stop Loss') * 0.01
+sl = strategy.position_size[1] > 0 ? strategy.position_avg_price * (1 - stoplossPercent) : strategy.position_size[1] < 0 ? strategy.position_avg_price * (1 + stoplossPercent) : na
 slLongClose = close < strategy.position_avg_price * (1 - stoplossPercent)
 slShortClose = close > strategy.position_avg_price * (1 + stoplossPercent)
 
+plot(sl, "SL", style=plot.style_linebr, color=color.red)
 /// Leverage
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 leverage = input.float(1, 'Leverage', step=.5, group='Leverage')
@@ -118,15 +151,15 @@ isInShortPosition = strategy.position_size < 0
 /// ProfitView Alert Syntax String Generation
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-alertSyntaxPrefix = input.string(defval='PV_Strategy-Name-Here', title='Alert Syntax Prefix', group='ProfitView Alert Syntax')
+alertSyntaxPrefix = input.string(defval='CRYPTANEX_99FTX_Strategy-Name-Here', title='Alert Syntax Prefix', group='ProfitView Alert Syntax')
 alertSyntaxBase = alertSyntaxPrefix + '\n#' + str.tostring(open) + ',' + str.tostring(high) + ',' + str.tostring(low) + ',' + str.tostring(close) + ',' + str.tostring(volume) + ','
 
 
 /// Trade Execution
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-longConditionCalc = (longCondition and isADXEnabledAndAboveThreshold)
-shortConditionCalc = (shortCondition and isADXEnabledAndAboveThreshold)
+longConditionCalc = (longCondition and isADXFilterEnabledAndAboveThreshold and isEMAFilterEnabledAndCloseAboveMA)
+shortConditionCalc = (shortCondition and isADXFilterEnabledAndAboveThreshold and isEMAFilterEnabledAndCloseBelowMA)
 
 if calcPeriod
     if longConditionCalc and tradeDirection != 'Short Only' and isInLongPosition == false
@@ -138,14 +171,106 @@ if calcPeriod
         strategy.entry('Short', strategy.short, qty=contracts)
 
         alert(message=alertSyntaxBase + 'side:short', freq=alert.freq_once_per_bar_close)
-    
-    //Inspired from Multiple %% profit exits example by adolgo https://www.tradingview.com/script/kHhCik9f-Multiple-profit-exits-example/
-    strategy.exit('TP1', qty_percent=q1, profit=per(tp1))
-    strategy.exit('TP2', qty_percent=q2, profit=per(tp2))
-    strategy.exit('TP3', qty_percent=q3, profit=per(tp3))
-    strategy.exit('TP4', profit=per(tp4))
 
-    strategy.close('Long', qty_percent=100, comment='SL Long', when=slLongClose)
-    strategy.close('Short', qty_percent=100, comment='SL Short', when=slShortClose)
+
+    // interesting little logic here to handle different cases for exiting
+    if not confirm_sl and not confirm_tp
+        strategy.exit('TP and SL', qty_percent=q1, profit=per(tp1), stop=sl, comment="TP or SL")
+    else if confirm_sl and confirm_tp
+        // i didn't add else here just in case both occur on one bar? -upslidedown
+        if slLongClose
+            strategy.close('Long', qty_percent=100, comment='SL Long', immediately = true)
+        if slShortClose
+            strategy.close('Short', qty_percent=100, comment='SL Short', immediately = true)
+        if tpLongClose
+            strategy.close('Long', qty_percent=100, comment='TP Long', immediately = true)
+        if tpShortClose
+            strategy.close('Short', qty_percent=100, comment='TP Short', immediately = true)
+    else if confirm_sl
+        if slLongClose
+            strategy.close('Long', qty_percent=100, comment='SL Long', immediately = true)
+        if slShortClose
+            strategy.close('Short', qty_percent=100, comment='SL Short', immediately = true)
+
+        strategy.exit('TP1', qty_percent=q1, profit=per(tp1))
+    else if confirm_tp
+        if tpLongClose
+            strategy.close('Long', qty_percent=100, comment='TP Long', immediately = true)
+        if tpShortClose
+            strategy.close('Short', qty_percent=100, comment='TP Short', immediately = true)
+
+        strategy.exit('SL', qty_percent=q1, stop=sl)
+
+        //strategy.close('Long', qty_percent=100, comment='SL Long', immediately = true)
+
+
+    //Inspired from Multiple %% profit exits example by adolgo https://www.tradingview.com/script/kHhCik9f-Multiple-profit-exits-example/
+//    strategy.exit('TP1', qty_percent=q1, profit=per(tp1), stop=sl)
+    //strategy.exit('TP2', qty_percent=q2, profit=per(tp2), stop=sl)
+    //strategy.exit('TP3', qty_percent=q3, profit=per(tp3), stop=sl)
+    //strategy.exit('TP4', profit=per(tp4), stop=sl)
+    //else if confirm_tp
+    //Inspired from Multiple %% profit exits example by adolgo https://www.tradingview.com/script/kHhCik9f-Multiple-profit-exits-example/
+    //strategy.exit('TP1', qty_percent=q1, profit=per(tp1))
+    //strategy.exit('TP2', qty_percent=q2, profit=per(tp2))
+    //strategy.exit('TP3', qty_percent=q3, profit=per(tp3))
+    //strategy.exit('TP4', profit=per(tp4))
+
 
     strategy.close_all(when=closeLongCondition or closeShortCondition, comment='Close Postion')
+
+/// Dashboard
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+// Inspired by https://www.tradingview.com/script/uWqKX6A2/ - Thanks VertMT
+
+showDashboard = input.bool(group="Dashboard", title="Show Dashboard", defval=true)
+
+f_fillCell(_table, _column, _row, _title, _value, _bgcolor, _txtcolor) =>
+    _cellText = _title + "\n" + _value
+    table.cell(_table, _column, _row, _cellText, bgcolor=_bgcolor, text_color=_txtcolor, text_size=size.auto)
+
+// Draw dashboard table
+if showDashboard
+    var bgcolor = color.new(color.black,0)
+    
+    // Keep track of Wins/Losses streaks
+    newWin  = (strategy.wintrades  > strategy.wintrades[1]) and (strategy.losstrades == strategy.losstrades[1]) and (strategy.eventrades == strategy.eventrades[1])
+    newLoss = (strategy.wintrades == strategy.wintrades[1]) and (strategy.losstrades  > strategy.losstrades[1]) and (strategy.eventrades == strategy.eventrades[1])
+
+    varip int winRow     = 0
+    varip int lossRow    = 0
+    varip int maxWinRow  = 0
+    varip int maxLossRow = 0
+
+    if newWin
+        lossRow := 0
+        winRow := winRow + 1
+    if winRow > maxWinRow
+        maxWinRow := winRow
+        
+    if newLoss
+        winRow := 0
+        lossRow := lossRow + 1
+    if lossRow > maxLossRow
+        maxLossRow := lossRow
+
+
+    // Prepare stats table
+    var table dashTable = table.new(position.bottom_right, 1, 15, border_width=1)
+    
+   
+    if barstate.islastconfirmedhistory
+        // Update table
+        dollarReturn = strategy.netprofit
+        f_fillCell(dashTable, 0, 0, "Start:", str.format("{0,date,long}", strategy.closedtrades.entry_time(0)) , bgcolor, color.white) // + str.format(" {0,time,HH:mm}", strategy.closedtrades.entry_time(0)) 
+        f_fillCell(dashTable, 0, 1, "End:", str.format("{0,date,long}", strategy.opentrades.entry_time(0)) , bgcolor, color.white) // + str.format(" {0,time,HH:mm}", strategy.opentrades.entry_time(0))
+        _profit = (strategy.netprofit / strategy.initial_capital) * 100
+        f_fillCell(dashTable, 0, 2, "Net Profit:", str.tostring(_profit, '##.##') + "%", _profit > 0 ? color.green : color.red, color.white)
+        _numOfDaysInStrategy = (strategy.opentrades.entry_time(0) - strategy.closedtrades.entry_time(0)) / (1000 * 3600 * 24)
+        f_fillCell(dashTable, 0, 3, "Percent Per Day", str.tostring(_profit / _numOfDaysInStrategy, '#########################.#####')+"%", _profit > 0 ? color.green : color.red, color.white)
+        _winRate = ( strategy.wintrades / strategy.closedtrades ) * 100
+        f_fillCell(dashTable, 0, 4, "Percent Profitable:", str.tostring(_winRate, '##.##') + "%", _winRate < 50 ? color.red : _winRate < 75 ? #999900 : color.green, color.white)
+        f_fillCell(dashTable, 0, 5, "Profit Factor:", str.tostring(strategy.grossprofit / strategy.grossloss,  '##.###'), strategy.grossprofit > strategy.grossloss ? color.green : color.red, color.white)
+        f_fillCell(dashTable, 0, 6, "Total Trades:", str.tostring(strategy.closedtrades), bgcolor, color.white)
+        f_fillCell(dashTable, 0, 8, "Max Wins In A Row:", str.tostring(maxWinRow, '######') , bgcolor, color.white)
+        f_fillCell(dashTable, 0, 9, "Max Losses In A Row:", str.tostring(maxLossRow, '######') , bgcolor, color.white)
