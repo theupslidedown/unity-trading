@@ -1,0 +1,126 @@
+// cloned from https://www.tradingview.com/script/YEOcUBmJ-Ichimoku/ for UT backtesting template by upslidedown
+
+//@version=5
+
+indicator('Custom Ichimoku Alerts [UT]', overlay=true)
+
+//Inputs
+ts_bars = input.int(9, minval=1, title='Tenkan-Sen Bars', group='Ichimoku Cloud')
+ks_bars = input.int(26, minval=1, title='Kijun-Sen Bars', group='Ichimoku Cloud')
+ssb_bars = input.int(52, minval=1, title='Senkou-Span B Bars', group='Ichimoku Cloud')
+cs_offset = input.int(26, minval=1, title='Chikou-Span Offset', group='Ichimoku Cloud')
+ss_offset = input.int(26, minval=1, title='Senkou-Span Offset', group='Ichimoku Cloud')
+long_entry = input.bool(true, title='Long Entry', group='Ichimoku Cloud')
+short_entry = input.bool(true, title='Short Entry', group='Ichimoku Cloud')
+wait_for_cloud = input.bool(true, title='Wait for Cloud Confirmation', group='Ichimoku Cloud')
+
+// RSI Inputs
+
+//seq_rsi = input(defval=1, title="Alert TP after X Sequential bars past RSI", type=input.integer, group="RSI")
+use_rsi_entry = input.bool(false, title='Use for Entry', group='RSI')
+use_rsi_tp = input.bool(false, title='Use for Take Profit', group='RSI')
+rsi_period = input.int(defval=7, title='RSI Period', group='RSI')
+overbought_rsi = input.int(defval=80, minval=1, maxval=100, title='Overbought Level', group='RSI')
+oversold_rsi = input.int(defval=20, minval=1, maxval=100, title='Oversold Level', group='RSI')
+
+// Stoch RSI Inputs
+toggle_stoch_rsi = input.bool(defval=false, title='Toggle RSI inputs to use Stoch RSI', group='Stoch RSI Toggle')
+stoch_rsi_length = input.int(defval=7, title='Stoch RSI Length', group='Stoch RSI Toggle')
+
+middle(len) =>
+    math.avg(ta.lowest(len), ta.highest(len))
+
+// Ichimoku Components
+tenkan = middle(ts_bars)
+kijun = middle(ks_bars)
+senkouA = math.avg(tenkan, kijun)
+senkouB = middle(ssb_bars)
+
+// Plot Ichimoku Kinko Hyo
+plot(tenkan, color=color.new(#0496ff, 0), title='Tenkan-Sen')
+plot(kijun, color=color.new(#991515, 0), title='Kijun-Sen')
+plot(close, offset=-cs_offset + 1, color=color.new(#459915, 0), title='Chikou-Span')
+sa = plot(senkouA, offset=ss_offset - 1, color=color.new(color.green, 0), title='Senkou-Span A')
+sb = plot(senkouB, offset=ss_offset - 1, color=color.new(color.red, 0), title='Senkou-Span B')
+fill(sa, sb, color=senkouA > senkouB ? color.green : color.red, title='Cloud color', transp=90)
+
+ss_high = math.max(senkouA[ss_offset - 1], senkouB[ss_offset - 1])
+ss_low = math.min(senkouA[ss_offset - 1], senkouB[ss_offset - 1])
+
+//Overriding Disabled Sequential RSI input
+seq_rsi = 1
+
+// Entry/Exit Signals
+tk_cross_bull = tenkan > kijun
+tk_cross_bear = tenkan < kijun
+cs_cross_bull = ta.mom(close, cs_offset - 1) > 0
+cs_cross_bear = ta.mom(close, cs_offset - 1) < 0
+price_above_kumo = close > ss_high
+price_below_kumo = close < ss_low
+senkou_green = senkouA > senkouB ? true : false
+rsi1 = ta.rsi(close, rsi_period)
+
+rsi_value = toggle_stoch_rsi ? ta.stoch(rsi1, rsi1, rsi1, rsi_period) : rsi1
+
+bullish = tk_cross_bull and cs_cross_bull and price_above_kumo
+bearish = tk_cross_bear and cs_cross_bear and price_below_kumo
+
+if wait_for_cloud
+    bullish := bullish and senkou_green
+    bearish := bearish and not senkou_green
+    bearish
+
+if use_rsi_entry
+    bullish := bullish and rsi_value < overbought_rsi
+    bearish := bearish and rsi_value > oversold_rsi
+    bearish
+
+in_long = false
+in_long := in_long[1]
+
+open_long = bullish and not in_long
+open_short = bearish and in_long
+
+
+if open_long
+    in_long := true
+    in_long
+if open_short
+    in_long := false
+    in_long
+
+rsi_count = 0
+arm_tp = false
+
+if use_rsi_tp
+    rsi_count := rsi_count[1]
+    if in_long and rsi_value > overbought_rsi or not in_long and rsi_value < oversold_rsi
+        rsi_count += 1
+        rsi_count
+    else
+        rsi_count := 0
+        rsi_count
+    if rsi_count >= seq_rsi
+        arm_tp := true
+        arm_tp
+
+//Alert Conditions    
+alertcondition(open_long and long_entry, title='Open Long', message='Open Long Alert')
+alertcondition(open_short and short_entry, title='Open Short', message='Open Short Alert')
+//Alert Conditions if Taking Profit with RSI
+alertcondition(use_rsi_tp and in_long and arm_tp, title='Take Profit Long', message='Take Profit Long')
+alertcondition(use_rsi_tp and not in_long and arm_tp, title='Take Profit Short', message='Take Profit Short')
+//Alert Plots
+plotshape(open_long and long_entry, text='Open Long', style=shape.labelup, location=location.belowbar, color=color.new(color.blue, 0), textcolor=color.new(color.white, 0), size=size.auto)
+plotshape(open_short and short_entry, text='Open Short', style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), textcolor=color.new(color.white, 0))
+// RSI TP Plots
+plotshape(use_rsi_tp and in_long and arm_tp, style=shape.diamond, location=location.abovebar, color=color.new(color.white, 0))
+plotshape(use_rsi_tp and not in_long and arm_tp, style=shape.diamond, location=location.belowbar, color=color.new(color.yellow, 0))
+
+
+
+long = open_long and long_entry
+short = open_short and short_entry
+
+strategy = long ? 1 : short ? -1 : 0
+plot(strategy, "Strategy Signal", display=display.data_window)
