@@ -1,0 +1,257 @@
+//@version=5
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Bunghole 2021
+
+indicator(title='QML Indicator Only w/filters [upslidedown]', overlay=true)
+
+//// Stoploss and Take Profit Parameters 
+// Enable Long Strategy
+enable_long_strategy = input.bool(true, title='Enable Long Strategy', group='Enable QML Strategy', inline='1')
+// Enable Short Strategy
+enable_short_strategy = input.bool(true, title='Enable Short Strategy', group='Enable QML Strategy', inline='2')
+loss_mult = input.float(2,minval=1, step=0.5, title='Martingale Multiplier (Set to 1 to disable)')
+baseamt=input.float(1, title='Position Size %')/100
+
+filter_ema = input.bool(false, title='Use EMA filter')
+lenEma1=input.int(50, title='EMA 1' )
+lenEma2=input.int(200,title='EMA 2')
+
+ema1= ta.ema(close, lenEma1)
+ema2= ta.ema(close,lenEma2)
+upT        = ema1 > ema2
+downT     = ema1 < ema2
+
+//ADX Filter
+filter_adx = input.bool(true, title='ADX Filter')
+lensig = 14//input.int(14, title="ADX Smoothing", minval=1, maxval=50) 
+adxVal =input.float(36, title='ADX Thresh')
+len = 14
+up = ta.change(high)
+down = -ta.change(low)
+plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
+minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+trur = ta.rma(ta.tr, len)
+plus = fixnan(100 * ta.rma(plusDM, len) / trur)
+minus = fixnan(100 * ta.rma(minusDM, len) / trur)
+sum = plus + minus
+adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), lensig)
+
+//base_contract_size= input.float(0.01, 'Base Contract Size')*strategy.initial_capital
+
+// Session 
+InSession(sessionTimes, sessionTimeZone=syminfo.timezone) => 
+    not na(time(timeframe.period, sessionTimes, sessionTimeZone))
+sessionInput = input.session("0000-2359", title="Session Times", 
+     group="Trading Session", tooltip="Use the checkboxes to select " + 
+     "on which days of the week this session is active. The session " +
+     "has to be active on at least one day.")
+monSession = input.bool(true, title="Mon ", group="Trading Session", inline="d1")
+tueSession = input.bool(true, title="Tue ", group="Trading Session", inline="d1")
+wedSession = input.bool(true, title="Wed ", group="Trading Session", inline="d1")
+thuSession = input.bool(true, title="Thu ", group="Trading Session", inline="d1")
+friSession = input.bool(false, title="Fri   ", group="Trading Session", inline="d2")
+satSession = input.bool(false, title="Sat  ", group="Trading Session", inline="d2")
+sunSession = input.bool(false, title="Sun ", group="Trading Session", inline="d2")
+
+// Make a days of week string based on the value of the checkboxes
+sessionDays = ""
+
+if sunSession
+    sessionDays += "1"
+if monSession
+    sessionDays += "2"
+if tueSession
+    sessionDays += "3"
+if wedSession
+    sessionDays += "4"
+if thuSession
+    sessionDays += "5"
+if friSession
+    sessionDays += "6"
+if satSession
+    sessionDays += "7"
+
+
+// Make the session string by joining the time with the days
+tradingSession = sessionInput + ":" + sessionDays
+
+bgcolor(InSession(tradingSession) ? color.new(color.fuchsia, 90) : na)
+tradetime=InSession(tradingSession) ?1:0
+//Time
+
+
+//@version=5
+//indicator("Quasimodo Pattern 2", "QML2", overlay=true, max_bars_back=5000, max_labels_count=500, max_lines_count=500)
+
+zigzag_len = input.int(11, "ZigZag Length",group = 'QML Settings')
+long=input.source(close,title='Source for Long',group = 'QML Settings')
+short=input.source(close,title='Source for Short',group = 'QML Settings')
+minGap=input.float(5, title='Max SL Thresh', step=0.25,group = 'QML Settings')
+
+var float[] high_points_arr = array.new_float(5)
+var int[] high_index_arr = array.new_int(5)
+var float[] low_points_arr = array.new_float(5)
+var int[] low_index_arr = array.new_int(5)
+
+//colorlong = close > strategy.position_avg_price ? #00bcd4 : #e91e63
+//colorshort = close < strategy.position_avg_price ? #00bcd4 : #e91e63
+
+//to_u = high >= ta.highest(zigzag_len)
+//to_up=to_u*0.99
+to_up = high >= ta.highest(zigzag_len)
+to_down = low <= ta.lowest(zigzag_len)
+
+trend = 1
+trend := nz(trend[1], 1)
+trend := trend == 1 and to_down ? -1 : trend == -1 and to_up ? 1 : trend
+
+last_trend_up_since = ta.barssince(to_up[1])
+low_val = ta.lowest(nz(last_trend_up_since > 0 ? last_trend_up_since : 1, 1))
+low_index = bar_index - ta.barssince(low_val == low)
+
+last_trend_down_since = ta.barssince(to_down[1])
+high_val = ta.highest(nz(last_trend_down_since > 0 ? last_trend_down_since : 1, 1))
+high_index = bar_index - ta.barssince(high_val == high)
+
+if ta.change(trend) != 0
+    if trend == 1
+        array.push(low_points_arr, low_val)
+        array.push(low_index_arr, low_index)
+    if trend == -1
+        array.push(high_points_arr, high_val)
+        array.push(high_index_arr, high_index)
+
+
+f_get_high(ind) =>
+    [array.get(high_points_arr, array.size(high_points_arr) - 1 - ind), array.get(high_index_arr, array.size(high_index_arr) - 1 - ind)]
+
+
+f_get_low(ind) =>
+    [array.get(low_points_arr, array.size(low_points_arr) - 1 - ind), array.get(low_index_arr, array.size(low_index_arr) - 1 - ind)]
+
+
+[h0, h0i] = f_get_high(0)
+[l0, l0i] = f_get_low(0)
+[h1, h1i] = f_get_high(1)
+[l1, l1i] = f_get_low(1)
+[h2, h2i] = f_get_high(2)
+[l2, l2i] = f_get_low(2)
+
+
+
+
+bu_cond = trend == -1 and h2 > h1 and l1 > l0 and h0 > h1 and close > l1
+be_cond = trend == 1 and l2 < l1 and h1 < h0 and l0 < l1 and close < h1
+
+
+//Strat
+//buy_signal =  trend == -1 and h2 > h1 and l1 > l0 and h0 > h1 and close > l1
+//sell_signal = trend == 1 and l2 < l1 and h1 < h0 and l0 < l1 and close < h1
+
+condition=true
+
+lastTradeProfit() =>
+    strategy.closedtrades.profit(strategy.closedtrades-1) + strategy.closedtrades.commission(strategy.closedtrades-1)
+    
+amountOfLastNegativeProfits() =>
+    result = 0
+    i = strategy.closedtrades - 1
+    while strategy.closedtrades.profit(i) < 0
+        result+=1
+        i-=1
+    result
+
+//size = lastTradeProfit() < 0 ? base_contract_size * amountOfLastNegativeProfits() : base_contract_size
+//size = lastTradeProfit() < 0 ? base_contract_size * 1.5 : base_contract_size
+//amount_buy=size<100?size:100
+
+
+// ---------------------------------------------
+// CLEAN UP LOGIC LAYER AND APPLY FILTERS
+// -upslidedown
+// ---------------------------------------------
+
+// BASE long and short condition criteria
+strategy_inverse = input.bool(false)
+longc = bu_cond and not bu_cond[1] and enable_long_strategy 
+shortc = be_cond and not be_cond[1] and enable_short_strategy 
+if strategy_inverse
+    shortc := bu_cond and not bu_cond[1] and enable_long_strategy 
+    longc := be_cond and not be_cond[1] and enable_short_strategy 
+
+
+if filter_adx 
+    longc := longc and adx > adxVal
+    shortc := shortc and adx > adxVal
+
+if filter_ema 
+    longc := longc and upT
+    shortc := shortc and downT
+
+// END CLEANUP ---------------------------------------------
+
+
+if longc
+    line.new(h2i, h2, l1i, l1, color=color.green, width=1)
+    line.new(l1i, l1, h1i, h1, color=color.green, width=1)
+    stoplossBu=line.new(h1i, h1, l0i, l0, color=color.orange, width=2)
+    takeprofit2=line.new(l0i, l0, h0i, h0, color=color.rgb(94, 76, 175), width=1)
+    entryBu=line.new(l1i, l1, bar_index, l1, color=color.purple, width=2)
+    e2=long
+    e1=line.get_y1(id=entryBu)
+    //entryPriceBu=math.avg(e1,e2)
+    entryPriceBu=long
+    //longStop=close*0.1
+    longStop=line.get_y2(id=stoplossBu)// *(1-thresh)
+    longSL=((entryPriceBu-longStop)/entryPriceBu*100)<minGap?longStop:entryPriceBu*(1-minGap/100)
+    longTp1=line.get_y1(id=stoplossBu)
+    longTp2=line.get_y2(id=takeprofit2)//*0.99
+    mainTp=math.avg(longTp1,longTp2)
+    buyValue=((entryPriceBu - longStop)/entryPriceBu)*100 > minGap
+    //buyValue=(longStop/entryPriceBu*100) < minGap
+
+    label.new(bar_index, l1, "Long Entry (" + str.tostring(entryPriceBu) + ")", style=label.style_label_up, textcolor=color.white, color=color.green, size=size.normal)
+    label.new(bar_index, l0, "Stop Loss (" + str.tostring(longSL) + ")", style=label.style_label_up, textcolor=color.black, color=color.yellow, size=size.normal)
+    //label.new(bar_index, h0, "MainTp (" + str.tostring(mainTp) + ")", style=label.style_label_up, textcolor=color.white, color=color.green, size=size.normal)
+    label.new(bar_index, h0, "LTP2 (" + str.tostring(longTp2) + ")", style=label.style_label_up, textcolor=color.white, color=color.green, size=size.normal)
+    //buyAlertMessage = '{"pair": "' + syminfo.ticker + '","price": "' + str.tostring(entryPriceBu) + '","stopLossPrice":"'+str.tostring(longSL)+'","trailingStopTriggerPrice":"'+str.tostring(longTp2)+'","orderType":"limit","type":"entry","exchange":"zignaly","exchangeAccountType":"futures","side":"long","positionSizePercentage":"'+str.tostring(qtyMult)+'","positionSizeQuote":"USDT","leverage":"20", "trailingStopTriggerPriority":"price","trailingStopDistancePercentage":"-0.05","signalId":"' + syminfo.ticker + '","stopLossPriority":"price","buyTTL":"7200","key":"xxx"}'
+    //alert(buyAlertMessage, alert.freq_once_per_bar_close)
+    //strategy.entry('Long', strategy.long,  limit=entryPriceBu, alert_message=buyAlertMessage)
+    //strategy.exit('Long  SL/TP', from_entry='Long', stop =longSL , trail_price=longTp2, alert_message='Your Long SL/TP Limit As Been Triggered.')
+    //strategy.close('Long', when=sell_signal, alert_message='Close Long Position')
+
+if shortc
+    //alert("Bearish QM!", alert.freq_once_per_bar)
+    line.new(l2i, l2, h1i, h1, color=color.rgb(82, 255, 246), width=1)
+    line.new(h1i, h1, l1i, l1, color=color.red, width=1)
+    //line.new(h1i, h1, bar_index, h1, color=color.rgb(163, 82, 255), width=1)
+    stoplossBe=line.new(l1i, l1, h0i, h0, color=color.orange, width=2)
+    takeprofit2=line.new(h0i, h0, l0i, l0, color=color.rgb(136, 243, 78, 51), width=3)
+    entryBe=line.new(h1i, h1, bar_index, h1, color=color.red, width=1)
+    entryPriceBe=short
+    //entryPriceBe=line.get_y1(id=entryBe)*(1-thresh)
+    shortStop=line.get_y2(id=stoplossBe)//*(1+thresh)
+    shortSL=((shortStop-entryPriceBe)/entryPriceBe*100)<minGap?shortStop:entryPriceBe*(1+minGap/100)
+    shortTp1=line.get_y1(id=stoplossBe)
+    shortTp2=line.get_y2(id=takeprofit2)//*0.99
+    mainTp=math.avg(shortTp1,shortTp2)
+    sellValue=((shortStop - entryPriceBe)/entryPriceBe)*100 > minGap
+    //sellValue=math.abs(shortStop/entryPriceBe*100) < minGap
+    label.new(bar_index, h1, "Short Entry (" + str.tostring(entryPriceBe)+ ")", style=label.style_label_down, textcolor=color.white, color=color.red, size=size.normal)
+    label.new(bar_index, h0, "StopLoss (" + str.tostring(shortSL)+ ")", style=label.style_label_down, textcolor=color.black, color=color.yellow, size=size.normal)
+    //label.new(bar_index, l0, "Main Tp (" + str.tostring(mainTp)+ ")", style=label.style_label_down, textcolor=color.white, color=color.red, size=size.normal)
+    label.new(bar_index, l0, "STP2 (" + str.tostring(shortTp2)+ ")", style=label.style_label_down, textcolor=color.white, color=color.red, size=size.normal)
+    //sellAlertMessage = '{"pair": "' + syminfo.ticker + '","price": "' + str.tostring(entryPriceBe) + '","stopLossPrice":"'+str.tostring(shortSL)+'","trailingStopTriggerPrice":"'+str.tostring(shortTp2)+'","orderType":"limit","type":"entry","exchange":"zignaly","exchangeAccountType":"futures","side":"short","positionSizePercentage":"'+str.tostring(qtyMult)+'","positionSizeQuote":"USDT","leverage":"20", "trailingStopTriggerPriority":"price","trailingStopDistancePercentage":"0.05","signalId":"' + syminfo.ticker + '","stopLossPriority":"price","sellTTL":"7200","key":"xxx"}'
+    //alert(sellAlertMessage, alert.freq_once_per_bar_close)
+    //strategy.entry('Short', strategy.short,   limit=entryPriceBe, alert_message=sellAlertMessage)
+    //strategy.exit('Short SL/TP', from_entry='Short', stop=shortSL, trail_price = shortTp2, trail_offset =0.05, alert_message='Your Short SL/TP Limit As Been Triggered.')
+    //strategy.close('Short', when=buy_signal, alert_message='Close Short Position')
+
+
+
+
+
+
+
+strategy = longc ? 1 : shortc ? -1 : 0
+plot(strategy, "Strategy Signal", display=display.data_window)
