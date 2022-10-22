@@ -1,0 +1,84 @@
+//Created by Trading Rush https://tradingrush.net/
+// © Trading Rush
+//@version=5
+// video on this https://youtu.be/t0deK4Omx6A
+indicator(title='Trading Rush Choppy Market', shorttitle='TR Choppy Market', timeframe='')
+
+line = input.int(20, minval=0, maxval=100, title='Line')
+line_new = line / 10
+col_green = #4caf50
+col_green_slow = #81c784
+col_green_slower = #c8e6c9
+col_red = #4caf50
+col_red_slow = #a5d6a7
+col_red_slower = #c8e6c9
+col_chop = color.new(color.blue, 0)
+hist = 10
+
+
+maColor = if close[1] > close[2] and close[2] > close[3] and close[3] > close[4] and close[4] > close[5] and close[5] > close[6]
+    col_green
+else if close[1] > close[2] and close[2] > close[3] and close[3] > close[4]
+    col_green_slow
+else if close[2] > close[3] and close[3] > close[4] and close[4] > close[5] and close[5] > close[6]
+    col_green_slower
+else if close[1] > close[2] and close[3] > close[4] and close[4] > close[5] and close[5] > close[6]
+    col_green_slower
+else if close[1] > close[2] and close[2] > close[3] and close[4] > close[5] and close[5] > close[6]
+    col_green_slower
+else if close[1] > close[2] and close[2] > close[3] and close[3] > close[4] and close[5] > close[6]
+    col_green_slower
+else if close[1] > close[2] and close[2] > close[3] and close[3] > close[4] and close[4] > close[5]
+    col_green_slower
+else if close[1] < close[2] and close[2] < close[3] and close[3] < close[4] and close[4] < close[5] and close[5] < close[6]
+    col_green
+else if close[1] < close[2] and close[2] < close[3] and close[3] < close[4]
+    col_green_slow
+else if close[2] < close[3] and close[3] < close[4] and close[4] < close[5] and close[5] < close[6]
+    col_green_slower
+else if close[1] < close[2] and close[3] < close[4] and close[4] < close[5] and close[5] < close[6]
+    col_green_slower
+else if close[1] < close[2] and close[2] < close[3] and close[4] < close[5] and close[5] < close[6]
+    col_green_slower
+else if close[1] < close[2] and close[2] < close[3] and close[3] < close[4] and close[5] < close[6]
+    col_green_slower
+else if close[1] < close[2] and close[2] < close[3] and close[3] < close[4] and close[4] < close[5]
+    col_green_slower
+else
+    col_chop
+
+if maColor == col_green
+    hist := 10
+    hist
+
+if maColor == col_green_slow
+    hist := 10
+    hist
+
+if maColor == col_green_slower
+    hist := 10
+    hist
+
+if maColor == col_chop
+    hist := 0
+    hist
+
+
+main = hist[1] + hist[2] + hist[3] + hist[4] + hist[5] + hist[6] + hist[7] + hist[8] + hist[9] + hist[10] / 10
+
+mainColor = if main < main[1]
+    color.red
+else
+    color.purple
+
+
+
+
+
+plot(hist * line_new, title='Choppy', style=plot.style_columns, color=maColor)
+plot(line, title='Line', color=color.new(color.orange, 0), linewidth=2)
+plot(main, title='Average', color=mainColor, linewidth=2)
+
+//plotshape(maColor == col_chop ? main : na, style=shape.labeldown, location=location.top, color=color.new(color.red, 0), title='Super Bear Warning SP', text='X', textcolor=color.new(color.white, 0))
+//plotshape(super_down1, style=shape.labeldown, location=location.top, color=red_dark, title='Super Bear Warning SP', text='SP'+warnsym, textcolor=white)
+
