@@ -1,0 +1,1142 @@
+//@version=4
+//Wavetrend, Cipher B, Swing HMA Guppy - Res/ Sup Strategy
+//This script is publicly available. For this reason, I ask not to make profit from it.
+// From https://discord.gg/QMUpWsdKf9 TSC's discord server and open source work
+// Dashboard: requirements are met, upward or downward trend, price prediction/ take profit point
+
+strategy(title="MML Entry script with VMC Cipher B, Swing, Heikin Ahsi, Guppy & VSLRT", shorttitle="MML Multi Indikator Script", overlay = true, pyramiding = 0, calc_on_order_fills = false, max_bars_back = 5000, commission_type =  strategy.commission.percent, commission_value = 0.07, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, initial_capital=5000, currency=currency.USD)
+
+// { Time Range
+FromMonth=input(defval=1,title="FromMonth", group="Time", minval=1,maxval=12)
+FromDay=input(defval=1,title="FromDay", group="Time", minval=1,maxval=31)
+FromYear=input(defval=2020,title="FromYear", group="Time", minval=2016)
+ToMonth=input(defval=1,title="ToMonth", group="Time", minval=1,maxval=12)
+ToDay=input(defval=1,title="ToDay", group="Time", minval=1,maxval=31)
+ToYear=input(defval=9999,title="ToYear", group="Time", minval=2017)
+start=timestamp(FromYear,FromMonth,FromDay,00,00)
+finish=timestamp(ToYear,ToMonth,ToDay,23,59)
+window()=>time>=start and time<=finish?true:false
+
+afterStartDate = time >= start and time<=finish?true:false
+
+zeroline = 0
+
+// } Time Range
+
+// { Range Filter
+
+// Source
+
+src = input(defval=close, title="Source", group="Range Filter (VMC Swing)")
+
+// Sampling Period
+// Settings for 5min chart, BTCUSDC. For Other coin, change the paremeters
+
+per = input(defval=9, minval=1, title="Sampling Period", group="Range Filter (VMC Swing)")
+
+// Range Multiplier
+
+mult1 = input(defval=1.9, minval=0.1, title="Range Multiplier", group="Range Filter (VMC Swing)")
+
+// Smooth Average Range
+
+smoothrng(x, t, m) =>
+    wper = t * 2 - 1
+    avrng = ema(abs(x - x[1]), t)
+    smoothrng = ema(avrng, wper) * m
+    smoothrng
+smrng = smoothrng(src, per, mult1)
+
+// Range Filter
+
+rngfilt(x, r) =>
+    rngfilt = x
+    rngfilt := x > nz(rngfilt[1]) ? x - r < nz(rngfilt[1]) ? nz(rngfilt[1]) : x - r :
+       x + r > nz(rngfilt[1]) ? nz(rngfilt[1]) : x + r
+    rngfilt
+filt = rngfilt(src, smrng)
+
+// Filter Direction
+
+upward = 0.0
+upward := filt > filt[1] ? nz(upward[1]) + 1 : filt < filt[1] ? 0 : nz(upward[1])
+downward = 0.0
+downward := filt < filt[1] ? nz(downward[1]) + 1 : filt > filt[1] ? 0 : nz(downward[1])
+
+// Target Bands
+
+hband = filt + smrng
+lband = filt - smrng
+
+// Colors
+
+filtcolor = upward > 0 ? color.lime : downward > 0 ? color.red : color.orange
+barcolor = src > filt and src > src[1] and upward > 0 ? color.lime :
+   src > filt and src < src[1] and upward > 0 ? color.green :
+   src < filt and src < src[1] and downward > 0 ? color.red :
+   src < filt and src > src[1] and downward > 0 ? color.maroon : color.orange
+
+filtplot = plot(filt, color=filtcolor, linewidth=3, title="Range Filter")
+
+// Target
+
+hbandplot = plot(hband, color=color.aqua, transp=100, title="High Target")
+lbandplot = plot(lband, color=color.fuchsia, transp=100, title="Low Target")
+
+// Fills
+
+fill(hbandplot, filtplot, color=color.aqua, title="High Target Range")
+fill(lbandplot, filtplot, color=color.fuchsia, title="Low Target Range")
+
+// Bar Color
+
+barcolor(barcolor)
+
+// Break Outs
+
+longCond = bool(na)
+shortCond = bool(na)
+longCond := src > filt and src > src[1] and upward > 0 or
+   src > filt and src < src[1] and upward > 0
+shortCond := src < filt and src < src[1] and downward > 0 or
+   src < filt and src > src[1] and downward > 0
+
+CondIni = 0
+CondIni := longCond ? 1 : shortCond ? -1 : CondIni[1]
+longCondition = longCond and CondIni[1] == -1
+shortCondition = shortCond and CondIni[1] == 1
+
+// } Range Filter
+
+// { EMA
+emasrc = close
+res5 = input(title="EMA Timeframe", group="EMA Settings", type=input.resolution, defval="5")
+len5 = input(title="EMA1 Length", group="EMA Settings", type=input.integer, defval=100)
+
+// Calculate EMA
+ema1 = ema(emasrc, len5)
+emasmooth1 = security(syminfo.tickerid, res5, ema1, barmerge.gaps_off, barmerge.lookahead_off)
+enableema = input(true, title="Enable EMA?", group="EMA Settings")
+
+// Draw EMA
+plot(emasmooth1, title="EMA1", linewidth=1, color=color.yellow)
+
+// } EMA
+
+// { Cipher B + Divergence
+
+// PARAMETERS {
+
+// WaveTrend
+wtChannelLen = input(9, title = 'WT Channel Length', type = input.integer, group="Cipher B + Divergence")
+wtAverageLen = input(12, title = 'WT Average Length', type = input.integer, group="Cipher B + Divergence")
+wtMASource = input(hlc3, title = 'WT MA Source', type = input.source, group="Cipher B + Divergence")
+wtMALen = input(3, title = 'WT MA Length', type = input.integer, group="Cipher B + Divergence")
+
+// WaveTrend Overbought & Oversold lines
+obLevel = input(53, title = 'WT Overbought Level 1', type = input.integer, group="Cipher B + Divergence")
+obLevel2 = input(60, title = 'WT Overbought Level 2', type = input.integer, group="Cipher B + Divergence")
+obLevel3 = input(100, title = 'WT Overbought Level 3', type = input.integer, group="Cipher B + Divergence")
+osLevel = input(-53, title = 'WT Oversold Level 1', type = input.integer, group="Cipher B + Divergence")
+osLevel2 = input(-60, title = 'WT Oversold Level 2', type = input.integer, group="Cipher B + Divergence")
+osLevel3 = input(-75, title = 'WT Oversold Level 3', type = input.integer, group="Cipher B + Divergence")
+
+// Divergence WT
+showHiddenDiv_nl = input(true, title = 'Not apply OB/OS Limits on Hidden Divergences', type = input.bool, group="Cipher B + Divergence")
+wtDivOBLevel = input(45, title = 'WT Bearish Divergence min', type = input.integer, group="Cipher B + Divergence")
+wtDivOSLevel = input(-65, title = 'WT Bullish Divergence min', type = input.integer, group="Cipher B + Divergence")
+
+// Divergence extra range
+wtDivOBLevel_add = input(15, title = 'WT 2nd Bearish Divergence', type = input.integer, group="Cipher B + Divergence")
+wtDivOSLevel_add = input(-40, title = 'WT 2nd Bullish Divergence 15 min', type = input.integer, group="Cipher B + Divergence")
+
+// RSI+MFI
+rsiMFIperiod = input(60,title = 'MFI Period', type = input.integer, group="Cipher B + Divergence")
+rsiMFIMultiplier = input(150, title = 'MFI Area multiplier', type = input.float, group="Cipher B + Divergence")
+rsiMFIPosY = input(2.5, title = 'MFI Area Y Pos', type = input.float, group="Cipher B + Divergence")
+
+// RSI
+rsiSRC = input(close, title = 'RSI Source', type = input.source, group="Cipher B + Divergence")
+rsiLen = input(14, title = 'RSI Length', type = input.integer, group="Cipher B + Divergence")
+rsiOversold = input(30, title = 'RSI Oversold', minval = 50, maxval = 100, type = input.integer, group="Cipher B + Divergence")
+rsiOverbought = input(60, title = 'RSI Overbought', minval = 0, maxval = 50, type = input.integer, group="Cipher B + Divergence")
+
+// Divergence RSI
+rsiDivOBLevel = input(60, title = 'RSI Bearish Divergence min', type = input.integer, group="Cipher B + Divergence")
+rsiDivOSLevel = input(30, title = 'RSI Bullish Divergence min', type = input.integer, group="Cipher B + Divergence")
+
+// RSI Stochastic
+stochUseLog = input(true, title=' Use Log?', type = input.bool, group="Cipher B + Divergence")
+stochAvg = input(false, title='Use Average of both K & D', type = input.bool, group="Cipher B + Divergence")
+stochSRC = input(close, title = 'Stochastic RSI Source', type = input.source, group="Cipher B + Divergence")
+stochLen = input(14, title = 'Stochastic RSI Length', type = input.integer, group="Cipher B + Divergence")
+stochRsiLen = input(14, title = 'RSI Length ', type = input.integer, group="Cipher B + Divergence")
+stochKSmooth = input(3, title = 'Stochastic RSI K Smooth', type = input.integer, group="Cipher B + Divergence")
+stochDSmooth = input(3, title = 'Stochastic RSI D Smooth', type = input.integer, group="Cipher B + Divergence")
+
+// Schaff Trend Cycle
+tcSRC = input(close, title = 'Schaff TC Source', type = input.source, group="Cipher B + Divergence")
+tclength = input(10, title="Schaff TC", type=input.integer, group="Cipher B + Divergence")
+tcfastLength = input(23, title="Schaff TC Fast Lenght", type=input.integer, group="Cipher B + Divergence")
+tcslowLength = input(50, title="Schaff TC Slow Length", type=input.integer, group="Cipher B + Divergence")
+tcfactor = input(0.5, title="Schaff TC Factor", type=input.float, group="Cipher B + Divergence")
+
+// Sommi Flag
+sommiVwapTF = input('720', title = 'Sommi F. Wave timeframe', type = input.string, group="Cipher B + Divergence")
+sommiVwapBearLevel = input(0, title = 'F. Wave Bear Level (less than)', type = input.integer, group="Cipher B + Divergence")
+sommiVwapBullLevel = input(0, title = 'F. Wave Bull Level (more than)', type = input.integer, group="Cipher B + Divergence")
+soomiFlagWTBearLevel = input(0, title = 'WT Bear Level (more than)', type = input.integer, group="Cipher B + Divergence")
+soomiFlagWTBullLevel = input(0, title = 'WT Bull Level (less than)', type = input.integer, group="Cipher B + Divergence")
+soomiRSIMFIBearLevel = input(0, title = 'Money flow Bear Level (less than)', type = input.integer, group="Cipher B + Divergence")
+soomiRSIMFIBullLevel = input(0, title = 'Money flow Bull Level (more than)', type = input.integer, group="Cipher B + Divergence")
+
+// Sommi Diamond
+sommiHTCRes = input('60', title = 'HTF Candle Res. 1', type = input.string, group="Cipher B + Divergence")
+sommiHTCRes2 = input('240', title = 'HTF Candle Res. 2', type = input.string, group="Cipher B + Divergence")
+soomiDiamondWTBearLevel = input(0, title = 'WT Bear Level (More than)', type = input.integer, group="Cipher B + Divergence")
+soomiDiamondWTBullLevel = input(0, title = 'WT Bull Level (Less than)', type = input.integer, group="Cipher B + Divergence")
+
+// Colors
+colorRed = #ff0000
+colorPurple = #e600e6
+colorGreen = #3fff00
+colorOrange = #e2a400
+colorYellow = #ffe500
+colorWhite = #ffffff
+colorPink = #ff00f0
+colorBluelight = #31c0ff
+
+colorWT1 = #90caf9
+colorWT2 = #0d47a1
+
+colorWT2_ = #131722
+
+colormacdWT1a = #4caf58
+colormacdWT1b = #af4c4c
+colormacdWT1c = #7ee57e
+colormacdWT1d = #ff3535
+
+colormacdWT2a = #305630
+colormacdWT2b = #310101
+colormacdWT2c = #132213
+colormacdWT2d = #770000
+
+// } PARAMETERS
+
+
+// FUNCTIONS {
+
+// Divergences
+f_top_fractal(src) => src[4] < src[2] and src[3] < src[2] and src[2] > src[1] and src[2] > src[0]
+f_bot_fractal(src) => src[4] > src[2] and src[3] > src[2] and src[2] < src[1] and src[2] < src[0]
+f_fractalize(src) => f_top_fractal(src) ? 1 : f_bot_fractal(src) ? -1 : 0
+
+f_findDivs(src, topLimit, botLimit, useLimits) =>
+    fractalTop = f_fractalize(src) > 0 and (useLimits ? src[2] >= topLimit : true) ? src[2] : na
+    fractalBot = f_fractalize(src) < 0 and (useLimits ? src[2] <= botLimit : true) ? src[2] : na
+    highPrev = valuewhen(fractalTop, src[2], 0)[2]
+    highPrice = valuewhen(fractalTop, high[2], 0)[2]
+    lowPrev = valuewhen(fractalBot, src[2], 0)[2]
+    lowPrice = valuewhen(fractalBot, low[2], 0)[2]
+    bearSignal = fractalTop and high[2] > highPrice and src[2] < highPrev
+    bullSignal = fractalBot and low[2] < lowPrice and src[2] > lowPrev
+    bearDivHidden = fractalTop and high[2] < highPrice and src[2] > highPrev
+    bullDivHidden = fractalBot and low[2] > lowPrice and src[2] < lowPrev
+    [fractalTop, fractalBot, lowPrev, bearSignal, bullSignal, bearDivHidden, bullDivHidden]
+
+// RSI+MFI
+f_rsimfi(_period, _multiplier, _tf) => security(syminfo.tickerid, _tf, sma(((close - open) / (high - low)) * _multiplier, _period) - rsiMFIPosY)
+
+// WaveTrend
+f_wavetrend(src, chlen, avg, malen, tf) =>
+    tfsrc = security(syminfo.tickerid, tf, src)
+    esa = ema(tfsrc, chlen)
+    de = ema(abs(tfsrc - esa), chlen)
+    ci = (tfsrc - esa) / (0.015 * de)
+    wt1 = security(syminfo.tickerid, tf, ema(ci, avg))
+    wt2 = security(syminfo.tickerid, tf, sma(wt1, malen))
+    wtVwap = wt1 - wt2
+    wtOversold = wt2 <= osLevel
+    wtOverbought = wt2 >= obLevel
+    wtCross = cross(wt1, wt2)
+    wtCrossUp = wt2 - wt1 <= 0
+    wtCrossDown = wt2 - wt1 >= 0
+    wtCrosslast = cross(wt1[2], wt2[2])
+    wtCrossUplast = wt2[2] - wt1[2] <= 0
+    wtCrossDownlast = wt2[2] - wt1[2] >= 0
+    [wt1, wt2, wtOversold, wtOverbought, wtCross, wtCrossUp, wtCrossDown, wtCrosslast, wtCrossUplast, wtCrossDownlast, wtVwap]
+
+// Schaff Trend Cycle
+f_tc(src, length, fastLength, slowLength) =>
+    ema1 = ema(src, fastLength)
+    ema2 = ema(src, slowLength)
+    macdVal = ema1 - ema2
+    alpha = lowest(macdVal, length)
+    beta = highest(macdVal, length) - alpha
+    gamma = (macdVal - alpha) / beta * 100
+    gamma := beta > 0 ? gamma : nz(gamma[1])
+    delta = gamma
+    delta := na(delta[1]) ? delta : delta[1] + tcfactor * (gamma - delta[1])
+    epsilon = lowest(delta, length)
+    zeta = highest(delta, length) - epsilon
+    eta = (delta - epsilon) / zeta * 100
+    eta := zeta > 0 ? eta : nz(eta[1])
+    stcReturn = eta
+    stcReturn := na(stcReturn[1]) ? stcReturn : stcReturn[1] + tcfactor * (eta - stcReturn[1])
+    stcReturn
+
+// Stochastic RSI
+f_stochrsi(_src, _stochlen, _rsilen, _smoothk, _smoothd, _log, _avg) =>
+    src = _log ? log(_src) : _src
+    rsi = rsi(src, _rsilen)
+    kk = sma(stoch(rsi, rsi, rsi, _stochlen), _smoothk)
+    d1 = sma(kk, _smoothd)
+    avg_1 = avg(kk, d1)
+    k = _avg ? avg_1 : kk
+    [k, d1]
+
+// MACD
+f_macd(src, fastlen, slowlen, sigsmooth, tf) =>
+    fast_ma = security(syminfo.tickerid, tf, ema(src, fastlen))
+    slow_ma = security(syminfo.tickerid, tf, ema(src, slowlen))
+    macd = fast_ma - slow_ma,
+    signal = security(syminfo.tickerid, tf, sma(macd, sigsmooth))
+    hist = macd - signal
+    [macd, signal, hist]
+
+// Get higher timeframe candle
+f_getTFCandle(_tf) =>
+    _open  = security(heikinashi(syminfo.tickerid), _tf, open, barmerge.gaps_off, barmerge.lookahead_on)
+    _close = security(heikinashi(syminfo.tickerid), _tf, close, barmerge.gaps_off, barmerge.lookahead_on)
+    _high  = security(heikinashi(syminfo.tickerid), _tf, high, barmerge.gaps_off, barmerge.lookahead_on)
+    _low   = security(heikinashi(syminfo.tickerid), _tf, low, barmerge.gaps_off, barmerge.lookahead_on)
+    hl2   = (_high + _low) / 2.0
+    newBar = change(_open)
+    candleBodyDir = _close > _open
+    [candleBodyDir, newBar]
+
+// Sommi flag
+f_findSommiFlag(tf, wt1, wt2, rsimfi, wtCross, wtCrossUp, wtCrossDown) =>
+    [hwt1, hwt2, hwtOversold, hwtOverbought, hwtCross, hwtCrossUp, hwtCrossDown, hwtCrosslast, hwtCrossUplast, hwtCrossDownlast, hwtVwap] = f_wavetrend(wtMASource, wtChannelLen, wtAverageLen, wtMALen, tf)
+
+    bearPattern = rsimfi < soomiRSIMFIBearLevel and
+                   wt2 > soomiFlagWTBearLevel and
+                   wtCross and
+                   wtCrossDown and
+                   hwtVwap < sommiVwapBearLevel
+
+    bullPattern = rsimfi > soomiRSIMFIBullLevel and
+                   wt2 < soomiFlagWTBullLevel and
+                   wtCross and
+                   wtCrossUp and
+                   hwtVwap > sommiVwapBullLevel
+
+    [bearPattern, bullPattern, hwtVwap]
+
+f_findSommiDiamond(tf, tf2, wt1, wt2, wtCross, wtCrossUp, wtCrossDown) =>
+    [candleBodyDir, newBar] = f_getTFCandle(tf)
+    [candleBodyDir2, newBar2] = f_getTFCandle(tf2)
+    bearPattern = wt2 >= soomiDiamondWTBearLevel and
+                   wtCross and
+                   wtCrossDown and
+                   not candleBodyDir and
+                   not candleBodyDir2
+    bullPattern = wt2 <= soomiDiamondWTBullLevel and
+                   wtCross and
+                   wtCrossUp and
+                   candleBodyDir and
+                   candleBodyDir2
+    [bearPattern, bullPattern]
+
+// } FUNCTIONS
+
+// CALCULATE INDICATORS {
+
+// RSI
+rsi = rsi(rsiSRC, rsiLen)
+rsiColor = rsi <= rsiOversold ? colorGreen : rsi >= rsiOverbought ? colorRed : colorPurple
+
+// RSI + MFI Area
+rsiMFI = f_rsimfi(rsiMFIperiod, rsiMFIMultiplier, timeframe.period)
+rsiMFIColor = rsiMFI > 0 ? #3ee145 : #ff3d2e
+
+// Calculates WaveTrend
+[wt1, wt2, wtOversold, wtOverbought, wtCross, wtCrossUp, wtCrossDown, wtCross_last, wtCrossUp_last, wtCrossDown_last, wtVwap] = f_wavetrend(wtMASource, wtChannelLen, wtAverageLen, wtMALen, timeframe.period)
+
+// Stochastic RSI
+[stochK, stochD] = f_stochrsi(stochSRC, stochLen, stochRsiLen, stochKSmooth, stochDSmooth, stochUseLog, stochAvg)
+
+// Schaff Trend Cycle
+tcVal = f_tc(tcSRC, tclength, tcfastLength, tcslowLength)
+
+// Sommi flag
+[sommiBearish, sommiBullish, hvwap] = f_findSommiFlag(sommiVwapTF, wt1, wt2, rsiMFI, wtCross,  wtCrossUp, wtCrossDown)
+
+//Sommi diamond
+[sommiBearishDiamond, sommiBullishDiamond] = f_findSommiDiamond(sommiHTCRes, sommiHTCRes2, wt1, wt2, wtCross, wtCrossUp, wtCrossDown)
+
+// WT Divergences
+[wtFractalTop, wtFractalBot, wtLow_prev, wtBearDiv, wtBullDiv, wtBearDivHidden, wtBullDivHidden] = f_findDivs(wt2, wtDivOBLevel, wtDivOSLevel, true)
+
+[wtFractalTop_add, wtFractalBot_add, wtLow_prev_add, wtBearDiv_add, wtBullDiv_add, wtBearDivHidden_add, wtBullDivHidden_add] =  f_findDivs(wt2, wtDivOBLevel_add, wtDivOSLevel_add, true)
+[wtFractalTop_nl, wtFractalBot_nl, wtLow_prev_nl, wtBearDiv_nl, wtBullDiv_nl, wtBearDivHidden_nl, wtBullDivHidden_nl] =  f_findDivs(wt2, 0, 0, false)
+
+wtBearDivHidden_ = showHiddenDiv_nl ? wtBearDivHidden_nl : wtBearDivHidden
+wtBullDivHidden_ = showHiddenDiv_nl ? wtBullDivHidden_nl : wtBullDivHidden
+
+// RSI Divergences
+[rsiFractalTop, rsiFractalBot, rsiLow_prev, rsiBearDiv, rsiBullDiv, rsiBearDivHidden, rsiBullDivHidden] = f_findDivs(rsi, rsiDivOBLevel, rsiDivOSLevel, true)
+[rsiFractalTop_nl, rsiFractalBot_nl, rsiLow_prev_nl, rsiBearDiv_nl, rsiBullDiv_nl, rsiBearDivHidden_nl, rsiBullDivHidden_nl] = f_findDivs(rsi, 0, 0, false)
+
+rsiBearDivHidden_ = showHiddenDiv_nl ? rsiBearDivHidden_nl : rsiBearDivHidden
+rsiBullDivHidden_ = showHiddenDiv_nl ? rsiBullDivHidden_nl : rsiBullDivHidden
+
+// Stoch Divergences
+[stochFractalTop, stochFractalBot, stochLow_prev, stochBearDiv, stochBullDiv, stochBearDivHidden, stochBullDivHidden] = f_findDivs(stochK, 0, 0, false)
+
+
+// Small Circles WT Cross
+signalColor = wt2 - wt1 > 0 ? color.red : color.lime
+
+// Buy signal.
+buySignal = wtCross and wtCrossUp and wtOversold
+
+buySignalDiv = (wtBullDiv) or
+               (wtBullDiv_add) or
+               (stochBullDiv) or
+               (rsiBullDiv)
+
+// Sell signal
+sellSignal = wtCross and wtCrossDown and wtOverbought
+
+sellSignalDiv = (wtBearDiv) or
+               (wtBearDiv_add) or
+               (stochBearDiv) or
+               (rsiBearDiv)
+
+sellSignalDiv_color = wtBearDiv ? colorRed :
+                     wtBearDiv_add ? color.new(colorRed, 60) :
+                     rsiBearDiv ? colorRed : na
+
+// Gold Buy
+lastRsi = valuewhen(wtFractalBot, rsi[2], 0)[2]
+wtGoldBuy = ((wtBullDiv) or (rsiBullDiv)) and
+           wtLow_prev <= osLevel3 and
+           wt2 > osLevel3 and
+           wtLow_prev - wt2 <= -5 and
+           lastRsi < 30
+
+// } CALCULATE INDICATORS
+
+// } Cipher B + Divergence
+
+// { Murrey Math Lines
+//-- get inputs
+string res1 = input(title="Resolution", type=input.resolution, defval="24", group="Murrey Math Lines")
+int frame = input(defval=65, title="Frame Size", type=input.integer, minval=8, maxval=256, group="Murrey Math Lines")
+float mult = input(defval=1.5, title="Frame Multiplier", type=input.float, minval=1.0, maxval=2.0, step=0.5, group="Murrey Math Lines")
+bool wicks = input(defval=true, title="Ignore Wicks?", group="Murrey Math Lines")
+
+//-- defines
+logTen = log(10)
+log8 = log(8)
+log2 = log(2)
+lookback = round(frame * mult)
+
+ss = syminfo.tickerid
+
+string res = res1=="" ? timeframe.period : res1
+
+o = security(ss, res, open)
+c = security(ss, res, close)
+h = security(ss, res, high)
+l = security(ss, res, low)
+
+uPrice = wicks == true ? max(o, c) : h
+lPrice = wicks == true ? min(o, c) : l
+
+//-- find highest/lowest price over specified lookback
+vLow1 = lowest(lPrice, lookback)
+vHigh1 = highest(uPrice, lookback)
+vLow = security(ss, res, vLow1)
+vHigh = security(ss, res, vHigh1)
+vDist = vHigh - vLow
+//-- if low price is < 0 then adjust accordingly
+tmpHigh = vLow < 0 ? 0 - vLow : vHigh
+tmpLow = vLow < 0 ? 0 - vLow - vDist : vLow
+
+//-- determine if price shift is in place
+shift = vLow < 0 ? true : false
+
+//-- calculate scale frame
+sfVar = log(0.4 * tmpHigh) / logTen - floor(log(0.4 * tmpHigh) / logTen)
+SR = tmpHigh > 25 ?
+   sfVar > 0 ? exp(logTen * (floor(log(0.4 * tmpHigh) / logTen) + 1)) :
+   exp(logTen * floor(log(0.4 * tmpHigh) / logTen)) :
+   100 * exp(log8 * floor(log(0.005 * tmpHigh) / log8))
+nVar1 = log(SR / (tmpHigh - tmpLow)) / log8
+nVar2 = nVar1 - floor(nVar1)
+N = nVar1 <= 0 ? 0 : nVar2 == 0 ? floor(nVar1) : floor(nVar1) + 1
+
+//-- calculate scale interval and temporary frame top and bottom
+SI = SR * exp(-N * log8)
+M = floor(1.0 / log2 * log((tmpHigh - tmpLow) / SI) + 0.0000001)
+I = round((tmpHigh + tmpLow) * 0.5 / (SI * exp((M - 1) * log2)))
+
+Bot = (I - 1) * SI * exp((M - 1) * log2)
+Top = (I + 1) * SI * exp((M - 1) * log2)
+
+//-- determine if frame shift is required
+doShift = tmpHigh - Top > 0.25 * (Top - Bot) or Bot - tmpLow > 0.25 * (Top - Bot)
+
+ER = doShift == true ? 1 : 0
+
+MM = ER == 0 ? M : ER == 1 and M < 2 ? M + 1 : 0
+NN = ER == 0 ? N : ER == 1 and M < 2 ? N : N - 1
+
+//-- recalculate scale interval and top and bottom of frame, if necessary
+finalSI = ER == 1 ? SR * exp(-NN * log8) : SI
+finalI = ER == 1 ? round((tmpHigh + tmpLow) * 0.5 / (finalSI * exp((MM - 1) * log2))) : I
+finalBot = ER == 1 ? (finalI - 1) * finalSI * exp((MM - 1) * log2) : Bot
+finalTop = ER == 1 ? (finalI + 1) * finalSI * exp((MM - 1) * log2) : Top
+
+//-- determine the increment
+Increment = (finalTop - finalBot) / 8
+
+//-- determine the absolute top
+absTop = shift == true ? -(finalBot - 3 * Increment) : finalTop + 3 * Increment
+
+//-- create our Murrey line variables based on absolute top and the increment
+newpos = strategy.opentrades[1] < strategy.opentrades
+barsnewpos = barssince(newpos)
+
+Plus38 = absTop
+Plus28 = absTop - Increment
+Plus18 = absTop - 2 * Increment
+EightEight = absTop - 3 * Increment
+SevenEight = absTop - 4 * Increment
+SixEight = absTop - 5 * Increment
+FiveEight = absTop - 6 * Increment
+FourEight = absTop - 7 * Increment
+ThreeEight = absTop - 8 * Increment
+TwoEight = absTop - 9 * Increment
+OneEight = absTop - 10 * Increment
+ZeroEight = absTop - 11 * Increment
+Minus18 = absTop - 12 * Increment
+Minus28 = absTop - 13 * Increment
+Minus38 = absTop - 14 * Increment
+
+TSCPlus38 = if strategy.opentrades == 0
+    Plus38
+else
+    Plus38[barsnewpos]
+
+TSCPlus28 = if strategy.opentrades == 0
+    Plus28
+else
+    Plus28[barsnewpos]
+
+TSCPlus18 = if strategy.opentrades == 0
+    Plus18
+else
+    Plus18[barsnewpos]
+
+TSCEightEight = if strategy.opentrades == 0
+    EightEight
+else
+    EightEight[barsnewpos]
+
+TSCSevenEight = if strategy.opentrades == 0
+    SevenEight
+else
+    SevenEight[barsnewpos]
+
+TSCSixEight = if strategy.opentrades == 0
+    SixEight
+else
+    SixEight[barsnewpos]
+
+TSCFiveEight = if strategy.opentrades == 0
+    FiveEight
+else
+    FiveEight[barsnewpos]
+
+TSCFourEight = if strategy.opentrades == 0
+    FourEight
+else
+    FourEight[barsnewpos]
+
+TSCThreeEight = if strategy.opentrades == 0
+    ThreeEight
+else
+    ThreeEight[barsnewpos]
+
+TSCTwoEight = if strategy.opentrades == 0
+    TwoEight
+else
+    TwoEight[barsnewpos]
+
+TSCOneEight = if strategy.opentrades == 0
+    OneEight
+else
+    OneEight[barsnewpos]
+
+TSCZeroEight = if strategy.opentrades == 0
+    ZeroEight
+else
+    ZeroEight[barsnewpos]
+
+TSCMinus18 = if strategy.opentrades == 0
+    Minus18
+else
+    Minus18[barsnewpos]
+
+TSCMinus28 = if strategy.opentrades == 0
+    Minus28
+else
+    Minus28[barsnewpos]
+
+TSCMinus38 = if strategy.opentrades == 0
+    Minus38
+else
+    Minus38[barsnewpos]
+
+//-- plot the lines and we are done
+plot(TSCPlus38, title="+3/8", style=plot.style_line, color=color.green, linewidth=1)
+plot(TSCPlus28, title="+2/8", style=plot.style_line, color=color.red, linewidth=1)
+plot(TSCPlus18, title="+1/8", style=plot.style_line, color=color.gray, linewidth=1)
+plot(TSCEightEight, title="8/8", style=plot.style_line, color=color.blue, linewidth=2)
+plot(TSCSevenEight, title="7/8", style=plot.style_line, color=color.gray, linewidth=1)
+plot(TSCSixEight, title="6/8", style=plot.style_line, color=color.red, linewidth=1)
+plot(TSCFiveEight, title="5/8", style=plot.style_line, color=color.green, linewidth=1)
+plot(TSCFourEight, title="4/8", style=plot.style_line, color=color.blue, linewidth=2)
+plot(TSCThreeEight, title="3/8", style=plot.style_line, color=color.green, linewidth=1)
+plot(TSCTwoEight, title="2/8", style=plot.style_line, color=color.red, linewidth=1)
+plot(TSCOneEight, title="1/8", style=plot.style_line, color=color.gray, linewidth=1)
+plot(TSCZeroEight, title="0/8", style=plot.style_line, color=color.blue, linewidth=2)
+plot(TSCMinus18, title="-1/8", style=plot.style_line, color=color.gray, linewidth=1)
+plot(TSCMinus28, title="-2/8", style=plot.style_line, color=color.red, linewidth=1)
+plot(TSCMinus38, title="-3/8", style=plot.style_line, color=color.green, linewidth=1)
+
+// } Murrey Math Lines
+
+// { Heikin Ashi Smoothes B/ S
+EMAlength=input(100,"EMA LENGTH?", group="Heikin Ashi Smooth")
+
+src5 = ohlc4
+haOpen = 0.0
+haOpen := (src5 + nz(haOpen[1])) / 2
+haC = (ohlc4 + nz(haOpen) + max(high, nz(haOpen)) + min(low, nz(haOpen))) / 4
+EMA1 = ema(haC, EMAlength)
+EMA2 = ema(EMA1, EMAlength)
+EMA3 = ema(EMA2, EMAlength)
+TMA1 = 3 * EMA1 - 3 * EMA2 + EMA3
+EMA4 = ema(TMA1, EMAlength)
+EMA5 = ema(EMA4, EMAlength)
+EMA6 = ema(EMA5, EMAlength)
+TMA2 = 3 * EMA4 - 3 * EMA5 + EMA6
+IPEK = TMA1 - TMA2
+YASIN = TMA1 + IPEK
+EMA7 = ema(hlc3, EMAlength)
+EMA8 = ema(EMA7, EMAlength)
+EMA9 = ema(EMA8, EMAlength)
+TMA3 = 3 * EMA7 - 3 * EMA8 + EMA9
+EMA10 = ema(TMA3, EMAlength)
+EMA11 = ema(EMA10, EMAlength)
+EMA12 = ema(EMA11, EMAlength)
+TMA4 = 3 * EMA10 - 3 * EMA11 + EMA12
+IPEK1 = TMA3 - TMA4
+YASIN1 = TMA3 + IPEK1
+
+mavi = YASIN1
+kirmizi = YASIN
+
+
+longCond5=mavi>kirmizi and mavi[1]<=kirmizi[1]
+shortCond5=mavi<kirmizi and mavi[1]>=kirmizi[1]
+
+trendState = kirmizi < mavi ? true : kirmizi > mavi ? false : na
+closePlot = plot(kirmizi, title="Close Line", color=#009900, linewidth=10, style=plot.style_line, transp=90)
+openPlot = plot(mavi, title="Open Line", color=#CC0000, linewidth=10, style=plot.style_line, transp=90)
+closePlotU = plot(trendState ? kirmizi : na, transp=100, editable=false)
+openPlotU = plot(trendState ? mavi : na, transp=100, editable=false)
+closePlotD = plot(trendState ? na : kirmizi, transp=100, editable=false)
+openPlotD = plot(trendState ? na : mavi, transp=100, editable=false)
+fill(openPlotU, closePlotU, title="Up Trend Fill", color=#009900, transp=1)
+fill(openPlotD, closePlotD, title="Down Trend Fill", color=#CC0000, transp=1)
+
+
+// } Heikin Ashi Smoothes B/ S
+
+// { VSLRT
+src6 = input(defval = close, title = "Source")
+len1 = input(defval = 22, title = "Short Term Length", minval = 5)
+len2 = input(defval = 50, title = "Long Term Length", minval = 5)
+
+// get short/long-term regression slope
+slope_price = linreg(src6, len1, 0) - linreg(src6, len1, 1)
+slope_price_lt = linreg(src6, len2, 0) - linreg(src6, len2, 1)
+
+// get the size of top/bottom/body of the candle
+tw = high - max(open, close)
+bw = min(open, close) - low
+body = abs(close - open)
+
+//Calculate Buy/Sell Volume
+_rate(cond) =>
+    ret = 0.5 * (tw + bw + (cond ? 2 * body : 0)) / (tw + bw + body)
+    ret := na(ret) ? 0.5 : ret
+    ret
+
+// Calculate Regression Slope for Buy/Sell Volumes
+_get_trend(len)=>
+    deltaup =  volume * _rate(open <= close)
+    deltadown = volume * _rate(open > close)
+
+    slope_volume_up = linreg(deltaup, len, 0) - linreg(deltaup, len, 1)
+    slope_volume_down = linreg(deltadown, len, 0) - linreg(deltadown, len, 1)
+    [slope_volume_up, slope_volume_down]
+
+// get buy/sell volume regression slopes for short term period
+[slope_volume_up, slope_volume_down] = _get_trend(len1)
+
+// coloring columns
+column_col = slope_price > 0 ? slope_volume_up > 0 ? slope_volume_up > slope_volume_down ? #00FF00ff : #00BC00 : #00FF006f :
+      slope_price < 0 ? slope_volume_down > 0 ? slope_volume_up < slope_volume_down ? #FF0000ff : #BF0000 : #FF00006f :
+      color.gray
+
+// get buy/sell volume regression slopes for long term period
+[slope_volume_up_lt, slope_volume_down_lt] = _get_trend(len2)
+
+// coloring columns
+column_col := slope_price_lt > 0 ? slope_volume_up_lt > 0 ? slope_volume_up_lt > slope_volume_down_lt ? #008EFF : #006ec5 : #024478 :
+       slope_price_lt < 0 ? slope_volume_down_lt > 0 ? slope_volume_up_lt < slope_volume_down_lt ? #fd9701 : #CE7A00 : #663d00 :
+       color.gray
+
+
+// } VSLRT
+
+// { Exit Cons
+
+//MML based Take Profit Exit
+//Long
+sl18 = input(title="MML points 1/8 tp %", group="MML based Exit Long", defval= 10, minval = 0)
+sl28 = input(title="MML points 2/8 tp %", group="MML based Exit Long", defval= 10, minval = 0)
+sl38 = input(title="MML points 3/8 tp %", group="MML based Exit Long", defval= 10, minval = 0)
+sl48 = input(title="MML points 4/8 tp %", group="MML based Exit Long", defval= 50, minval = 0)
+sl58 = input(title="MML points 5/8 tp %", group="MML based Exit Long", defval= 10, minval = 0)
+sl68 = input(title="MML points 6/8 tp %", group="MML based Exit Long", defval= 10, minval = 0)
+sl78 = input(title="MML points 7/8 tp %", group="MML based Exit Long", defval= 10, minval = 0)
+sl88 = input(title="MML points 8/8 tp %", group="MML based Exit Long", defval= 100, minval = 0)
+
+//Short
+ss78 = input(title="MML points 7/8 tp %", group="MML based Exit Short", defval= 10, minval = 0)
+ss68 = input(title="MML points 6/8 tp %", group="MML based Exit Short", defval= 10, minval = 0)
+ss58 = input(title="MML points 5/8 tp %", group="MML based Exit Short", defval= 10, minval = 0)
+ss48 = input(title="MML points 4/8 tp %", group="MML based Exit Short", defval= 50, minval = 0)
+ss38 = input(title="MML points 3/8 tp %", group="MML based Exit Short", defval= 10, minval = 0)
+ss28 = input(title="MML points 2/8 tp %", group="MML based Exit Short", defval= 10, minval = 0)
+ss18 = input(title="MML points 1/8 tp %", group="MML based Exit Short", defval= 10, minval = 0)
+ss08 = input(title="MML points 0/8 tp %", group="MML based Exit Short", defval= 100, minval = 0)
+
+// Indicator based Stop Loss
+
+//Das Stopp Loss wird prozentual gemäß der Indikatoren berechnet. Je nachdem, wie die Indikatoren sich verhalten, wird ein prozentualer Stop Loss festgesetzt.
+//Long
+
+basesl = input(defval=4, minval=0.1, title="Standard Stop Loss", group="Indicator based stop loss") *0.01
+rfperc = input(defval=1, minval=0.1, title="% SL Range Signal", group="Indicator based stop loss") *0.01
+vmcperc = input(defval=1, minval=0.1, title="% SL VMC Signal", group="Indicator based stop loss") *0.01
+hasperc = input(defval=1, minval=0.1, title="% SL Heikin Ashi Signal", group="Indicator based stop loss") *0.01
+
+
+rfsl = if longCondition[1]
+    -rfperc
+else
+    if shortCondition[1]
+        rfperc
+    else
+        0
+
+vmcsl = if buySignal[1]
+    -vmcperc
+else
+    if sellSignal[1]
+        vmcperc
+    else
+        0
+
+hassl = if longCond5[1]
+    -hasperc
+else
+    if shortCond5[1]
+        hasperc
+    else
+        0
+
+//ALS IF CONDITION, DASS SOBALD BESTIMMTS MML ERREICHT WIRD = BREAK EVEN
+
+breakeven = input(title="BreakEvenPoint", defval="1. Profittarget", options=["1. Profittarget", "2. Profittarget", "3. Profittarget", "4. Profittarget", "5. Profittarget", "6. Profittarget", "7. Profittarget"], group="Break Even")
+
+longbe = if breakeven == "1. Profittarget"
+    (close > TSCOneEight) and (close < TSCTwoEight)
+else
+    if breakeven == "2. Profittarget"
+        (close > TSCTwoEight) and (close < TSCThreeEight)
+    else
+        if breakeven == "3. Profittarget"
+            (close > TSCThreeEight) and (close < TSCFourEight)
+
+        else
+            if breakeven == "4. Profittarget"
+                (close > TSCFourEight) and (close < TSCFiveEight)
+
+            else
+                if breakeven == "5. Profittarget"
+                    (close > TSCFiveEight) and (close < TSCSixEight)
+
+                else
+                    if breakeven == "6. Profittarget"
+                        (close > TSCSixEight) and (close < TSCSevenEight)
+
+                    else
+                        if breakeven == "7. Profittarget"
+                            (close > TSCSevenEight) and (close < TSCEightEight)
+
+shortbe = if breakeven == "1. Profittarget"
+    (close > TSCSixEight) and (close < TSCSevenEight)
+else
+    if breakeven == "2. Profittarget"
+        (close > TSCFiveEight) and (close < TSCSixEight)
+    else
+        if breakeven == "3. Profittarget"
+            (close > TSCFourEight) and (close < TSCFiveEight)
+
+        else
+            if breakeven == "4. Profittarget"
+                (close > TSCThreeEight) and (close < TSCFourEight)
+
+            else
+                if breakeven == "5. Profittarget"
+                    (close > TSCTwoEight) and (close < TSCThreeEight)
+
+                else
+                    if breakeven == "6. Profittarget"
+                        (close > TSCOneEight) and (close < TSCTwoEight)
+
+                    else
+                        if breakeven == "7. Profittarget"
+                            (close > TSCZeroEight) and (close < TSCOneEight)
+
+
+longStopPrice = 0.0
+
+longStopPrice := if (strategy.position_entry_name == "long") and longbe
+    stopValue = strategy.position_avg_price
+else
+    if (strategy.position_entry_name == "long")
+        stopValue = close * (1 - basesl - rfsl - vmcsl - hassl)
+        max(stopValue, longStopPrice[1])
+    else
+        0
+
+//Short
+rfsl1 = if shortCondition[1]
+    rfperc
+else
+    if longCondition[1]
+        -rfperc
+    else
+        0
+
+vmcsl1 = if sellSignal[1]
+    vmcperc
+else
+    if buySignal[1]
+        -vmcperc
+    else
+        0
+
+hassl1 = if shortCond5[1]
+    hasperc
+else
+    if longCond5[1]
+        -hasperc
+    else
+        0
+
+shortStopPrice = 0.0
+shortStopPrice := if (strategy.position_entry_name == "short") and shortbe
+    stopValue = strategy.position_avg_price
+else
+    if (strategy.position_entry_name == "short")
+        stopValue = close * (1 + basesl + rfsl + vmcsl + hassl)
+        min(stopValue, shortStopPrice[1])
+    else
+        999999
+
+
+
+plot(series=(strategy.position_size > 0) ? longStopPrice : na,
+     color=color.fuchsia, style=plot.style_cross,
+     linewidth=2, title="Long Trail Stop")
+
+plot(series=(strategy.position_size < 0) ? shortStopPrice : na,
+     color=color.fuchsia, style=plot.style_cross,
+     linewidth=2, title="Short Trail Stop")
+// } Exit Cons
+
+// { Alerts
+//LONG
+//Entry
+message_long_entry  = input(title = "Alert Mesage Long Entry", type = input.string, defval = "", group="Alerts Long")
+//Exit
+message_long_exit  = input(title = "Alert Mesage 100 % Long Exit", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_18  = input(title = "Alert Mesage Long Exit 1/8", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_28  = input(title = "Alert Mesage Long Exit 2/8", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_38  = input(title = "Alert Mesage Long Exit 3/8", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_48  = input(title = "Alert Mesage Long Exit 4/8", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_58  = input(title = "Alert Mesage Long Exit 5/8", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_68  = input(title = "Alert Mesage Long Exit 6/8", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_78  = input(title = "Alert Mesage Long Exit 7/8", type = input.string, defval = "", group="Alerts Long")
+message_long_exit_88  = input(title = "Alert Mesage Long Exit 8/8", type = input.string, defval = "", group="Alerts Long")
+
+//Short
+//Entry
+message_short_entry = input(title = "Alert Mesage Short Entry", type = input.string, defval = "", group="Alerts Short")
+//Exit
+message_short_exit  = input(title = "Alert Mesage 100% Short Exit", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_78  = input(title = "Alert Mesage Short Exit 77/8", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_68  = input(title = "Alert Mesage Short Exit 7/8", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_58  = input(title = "Alert Mesage Short Exit 7/8", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_48  = input(title = "Alert Mesage Short Exit 7/8", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_38  = input(title = "Alert Mesage Short Exit 7/8", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_28  = input(title = "Alert Mesage Short Exit 7/8", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_18  = input(title = "Alert Mesage Short Exit 7/8", type = input.string, defval = "", group="Alerts Short")
+message_short_exit_08  = input(title = "Alert Mesage Short Exit 7/8", type = input.string, defval = "", group="Alerts Short")
+
+// } Alerts
+
+// { Signals
+fes = input(title="final entry signal", defval="Heikin Ashi smoothed b/s", options=["Range Filter (VMC Swing)", "Heikin Ashi smoothed b/s", "VMC Cipher", "VSLRT"], group="Exit Condition")
+Conlb = input(title="Indicator range", group="Entry Settings", defval= 8, minval = 0.1)
+srwidth = input(title="sup/res width in %", group="Entry Settings", defval= 0.5, minval = 0.1)
+width = srwidth / 100
+
+rfl = longCondition
+rfs = shortCondition
+vmcl = buySignal
+vmcs = sellSignal
+supl = (close > ZeroEight) and (close < (ZeroEight + (ZeroEight*width)))
+ress = (close < EightEight) and (close > (EightEight - (EightEight*width)))
+hasl = longCond5
+hass = shortCond5
+vslrtl = (slope_price > 0) and (slope_volume_up > 0) and (slope_volume_up > slope_volume_down)
+vslrts = (slope_price < 0) and (slope_volume_down > 0) and (slope_volume_up < slope_volume_down)
+
+bar1 = rfl
+bar2 = rfs
+bar3 = hasl
+bar4 = hass
+bar5 = vmcl
+bar6 = vmcs
+bar7 = vslrtl
+bar8 = vslrts
+
+mainindil = if fes == "Range Filter (VMC Swing)"
+    bar1
+else
+    if fes == "Heikin Ashi smoothed b/s"
+        bar3
+    else
+        if fes == "VMC Cipher"
+            bar5
+        else
+            if fes =="VSLRT"
+                bar7
+
+mainindis = if fes == "Range Filter (VMC Swing)"
+    bar2
+else
+    if fes == "Heikin Ashi smoothed b/s"
+        bar4
+    else
+        if fes == "VMC Cipher"
+            bar6
+        else
+            if fes =="VSLRT"
+                bar8
+
+//Mainindikator muss in den letzten Kerzen geschehen sein, Indikatoren davor müssen am Ende maximal in Conlb*2 geschehen sein.
+
+LONGcon = (barssince(mainindil) <= Conlb) and ((barssince(bar1) - barssince(mainindil)) <= Conlb) and ((barssince(bar3) - barssince(mainindil)) <= Conlb) and ((barssince(bar5) - barssince(mainindil)) <= Conlb) and ((barssince(bar7) - barssince(mainindil)) <= Conlb)
+SHORTcon = (barssince(mainindis) <= Conlb) and ((barssince(bar2) - barssince(mainindil)) <= Conlb) and ((barssince(bar4) - barssince(mainindil)) <= Conlb) and ((barssince(bar6) - barssince(mainindil)) <= Conlb) and ((barssince(bar8) - barssince(mainindil)) <= Conlb)
+
+// } Signals
+
+// { Dashboard
+
+dashOn = input(true, "Dashboard On / Off")
+dashDist = input(13, "Dashboard Distance")
+dashColor = input(color.new(#696969, 80), "Dashboard Color", inline="Dash Line")
+dashTextColor = input(color.new(#ffffff, 0), "Text Color", inline="Dash Line")
+
+//Calculates Volatility for Dashboard
+atr = atr(14)
+stdAtr = 2 * stdev(atr, 20)
+smaAtr = sma(atr, 20)
+topAtrDev = smaAtr + stdAtr
+bottomAtrDev = smaAtr - stdAtr
+calcDev = (atr - bottomAtrDev) / (topAtrDev - bottomAtrDev)
+percentVol = (40 * calcDev + 30)
+
+//Calculates Volume for Dashboard
+volumeDash = volume
+
+//RSI for Dashboard
+rsiDash = rsi(close, 14)
+
+//Calculates Sentiment for Dashboard
+ema9 = ema(close, 9)
+totalSentTxt = ema9 > ema9[2] ? "Bullish" : ema9 < ema9[2] ? "Bearish" : "Flat"
+
+//Signal Signs
+yessign = "🟢"
+nosign = "🔴"
+vmccblsign = ((barssince(bar5) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+vmccbssign = ((barssince(bar6) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+vmcslsign = ((barssince(bar1) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+vmcsssign = ((barssince(bar2) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+halsign = ((barssince(bar3) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+hassign = ((barssince(bar4) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+vslrtlsign = ((barssince(bar7) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+vslrtssign = ((barssince(bar8) - barssince(mainindil)) <= Conlb) ? yessign : nosign
+
+
+
+if dashOn
+    label TSCLabel = label.new(time, close,
+     text="TSC - MML Multi Indicator Script V 0.5️"
+     + "\n━━━━━━━━━━━━━━━━━"
+     + "\n          Signal Information "
+     + "\n━━━━━━━━━━━━━━━━━"
+     + "\n             📈 Long Signal 📈"
+     + "\n VMC CB+                " + vmccblsign
+     + "\n VMC Swing    " + vmcslsign
+     + "\n Heikin Ashi  " + halsign
+     + "\n VSLRT        " + vslrtlsign
+     + "\n━━━━━━━━━━━━━━━━━"
+     + "\n             📉 Short Signal 📉"
+     + "\n VMC CB+                " + vmccbssign
+     + "\n VMC Swing    " + vmcsssign
+     + "\n Heikin Ashi  " + hassign
+     + "\n VSLRT        " + vslrtssign
+     + "\n━━━━━━━━━━━━━━━━━"
+     + "\n Current Sentiment: " + totalSentTxt
+     + "\n━━━━━━━━━━━━━━━━━"
+     + "\n                TSC Dashboard ",
+     color=dashColor, xloc= xloc.bar_time, style=label.style_label_left, textcolor=dashTextColor, textalign=text.align_left)
+    label.set_x(TSCLabel, label.get_x(TSCLabel) + round(change(time)*dashDist))
+    label.delete(TSCLabel[1])
+
+// } Dashboard
+
+// { Long Entry
+
+enablelong = input(true, title="Enable long?", group="Entry Settings")
+
+//strategy buy long
+if enableema == true
+    if (supl) and (LONGcon) and (afterStartDate) and (strategy.opentrades < 1) and (enablelong == true) and (close > emasmooth1)
+        strategy.entry("long", strategy.long, alert_message = message_long_entry)
+else
+    if (supl) and (LONGcon) and (afterStartDate) and (strategy.opentrades < 1) and (enablelong == true)
+        strategy.entry("long", strategy.long, alert_message = message_long_entry)
+
+
+// } Long Entry
+
+// { Short Entry
+
+enableshort = input(true, title="Enable short?", group="Entry Settings")
+
+//strategy buy short
+if enableema == true
+    if (ress) and (SHORTcon) and (afterStartDate) and (strategy.opentrades < 1) and (enableshort == true) and (close < emasmooth1)
+        strategy.entry("short", strategy.short, alert_message = message_short_entry)
+else
+    if (ress) and (SHORTcon) and (afterStartDate) and (strategy.opentrades < 1) and (enableshort == true)
+        strategy.entry("short", strategy.short, alert_message = message_short_entry)
+
+// } Short Entry
+
+// { Exit
+enable08 = input(true, title="Enable TP/ SL MML 0/8?", group="Entry Settings")
+enable18 = input(true, title="Enable TP/ SL MML 1/8?", group="Entry Settings")
+enable28 = input(true, title="Enable TP/ SL MML 2/8?", group="Entry Settings")
+enable38 = input(true, title="Enable TP/ SL MML 3/8?", group="Entry Settings")
+enable48 = input(true, title="Enable TP/ SL MML 4/8?", group="Entry Settings")
+enable58 = input(true, title="Enable TP/ SL MML 5/8?", group="Entry Settings")
+enable68 = input(true, title="Enable TP/ SL MML 6/8?", group="Entry Settings")
+enable78 = input(true, title="Enable TP/ SL MML 7/8?", group="Entry Settings")
+enable88 = input(true, title="Enable TP/ SL MML 8/8?", group="Entry Settings")
+
+//LONG EXIT NICHT PROZENTZUAL, SONDERN DEZIMAL UM 0 ZU ERMÖGLICHEN!
+
+
+if (afterStartDate) and (strategy.position_entry_name == "long") and close <= longStopPrice
+    strategy.close("long", when = close < longStopPrice, alert_message = message_long_exit)
+
+if (enable18 == true) and (afterStartDate) and (close >= TSCOneEight) and (close < TSCTwoEight) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 1/8", "long", qty_percent = sl18, profit = TSCOneEight, alert_message = message_long_exit_18)
+
+if (enable28 == true) and (afterStartDate) and (close >= TSCTwoEight) and (close < TSCThreeEight) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 2/8", "long", qty_percent = sl28, profit = TSCTwoEight, alert_message = message_long_exit_28)
+
+if (enable38 == true) and (afterStartDate) and (close >= TSCThreeEight) and (close < TSCFourEight) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 3/8", "long", qty_percent = sl38, profit = TSCThreeEight, alert_message = message_long_exit_38)
+
+if (enable48 == true) and (afterStartDate) and (close >= TSCFourEight) and (close < TSCFiveEight) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 4/8", "long", qty_percent = sl48, profit = TSCFourEight, alert_message = message_long_exit_48)
+
+if (enable58 == true) and (afterStartDate) and (close >= TSCFiveEight) and (close < TSCSixEight) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 5/8", "long", qty_percent = sl58, profit = TSCFiveEight, alert_message = message_long_exit_58)
+
+if (enable68 == true) and (afterStartDate) and (close >= TSCSixEight) and (close < TSCSevenEight) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 6/8", "long", qty_percent = sl68, profit = TSCSixEight, alert_message = message_long_exit_68)
+
+if (enable78 == true) and (afterStartDate) and (close >= TSCSevenEight) and (close < TSCEightEight) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 7/8", "long", qty_percent = sl78, profit = TSCSevenEight, alert_message = message_long_exit_78)
+
+if (enable88 == true) and (afterStartDate) and (close >= TSCEightEight) and (close < TSCPlus18) and (strategy.position_entry_name == "long")
+    strategy.exit("TP 8/8", "long", qty_percent = sl88, profit = TSCEightEight, alert_message = message_long_exit_88)
+
+//SHORT EXIT
+if (afterStartDate) and (strategy.position_entry_name == "short") and close >= shortStopPrice
+    strategy.close("short", when = close > shortStopPrice, alert_message = message_short_exit)
+
+if (enable78 == true) and (afterStartDate) and (close <= TSCSevenEight) and (close > TSCSixEight) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 7/8", "short", qty_percent = ss78, profit = TSCSevenEight, alert_message = message_short_exit_78)
+
+if (enable68 == true) and (afterStartDate) and (close <= TSCSixEight) and (close > TSCFiveEight) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 6/8", "short", qty_percent = ss68, profit = TSCSixEight, alert_message = message_short_exit_68)
+
+if (enable58 == true) and (afterStartDate) and (close <= TSCFiveEight) and (close > TSCFourEight) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 5/8", "short", qty_percent = ss58, profit = TSCFiveEight, alert_message = message_short_exit_58)
+
+if (enable48 == true) and (afterStartDate) and (close <= TSCFourEight) and (close > TSCThreeEight) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 4/8", "short", qty_percent = ss48, profit = TSCFourEight, alert_message = message_short_exit_48)
+
+if (enable38 == true) and (afterStartDate) and (close <= TSCThreeEight) and (close > TSCTwoEight) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 3/8", "short", qty_percent = ss38, profit = TSCThreeEight, alert_message = message_short_exit_38)
+
+if (enable28 == true) and (afterStartDate) and (close <= TSCTwoEight) and (close > TSCOneEight) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 2/8", "short", qty_percent = ss28, profit = TSCTwoEight, alert_message = message_short_exit_28)
+
+if (enable18 == true) and (afterStartDate) and (close <= TSCOneEight) and (close > TSCZeroEight) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 1/8", "short", qty_percent = ss18, profit = TSCOneEight, alert_message = message_short_exit_18)
+
+if (enable08 == true) and (afterStartDate) and (close <= TSCZeroEight) and (close > TSCMinus18) and (strategy.position_entry_name == "short")
+    strategy.exit("TP 0/8", "short", qty_percent = ss08, profit = TSCZeroEight, alert_message = message_short_exit_08)
+
+// } Exit
