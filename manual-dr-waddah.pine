@@ -1,0 +1,867 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// original indicator © promuckaj
+// extended by UT team initial idea/script to mix waddah levels and take entries immediately © uno
+
+//@version=5
+
+indicator("Manual DR w/Waddah v0.2", overlay=true, max_boxes_count = 500, max_labels_count = 500, max_lines_count = 500)
+//v1.7
+
+
+showMain = input(true,"Show main DR/iDR", group = "DR/iDR v1.7 by Promuckaj")
+TimeMain = input.session("0930-1030", "DR time range:", group = "DR/iDR v1.7 by Promuckaj", tooltip = "By default it is set to be used on 5min chart, so it means it is set to obtain last candle on 10:25. Consider this if you change time frame.")
+
+showEarly = input(true,"Show oDR/oiDR", group = "DR/iDR v1.7 by Promuckaj")
+TimeEarly = input.session("0300-0400", "oDR time range:", group = "DR/iDR v1.7 by Promuckaj",tooltip = "By default it is set to be used on 5min chart, so it means it is set to obtain last candle on 03:55. Consider this if you change time frame.")
+
+showADR = input(true,"Show aDR/aiDR", group = "DR/iDR v1.7 by Promuckaj")
+TimeADR = input.session("1930-2030", "aDR time range:", group = "DR/iDR v1.7 by Promuckaj",tooltip = "By default it is set to be used on 5min chart, so it means it is set to obtain last candle on 08:25 pm. Consider this if you change time frame.")
+
+
+showExtLines = input(true,"Show extended lines on session", group = "Customizations", tooltip = "Extended lines to the right will be visible till next DR sesion")
+showDRlabels = input(true,"Show DR labels", group = "Customizations")
+showDRtexts = input(true,"Show DR texts", group = "Customizations")
+mainColor = input.color(color.green,"High DR Color:", inline = "Main lines:", group = "Customizations")
+mainLebelTextCol = input.color(color.white,"Label Text color:", inline = "Main lines:", group = "Customizations")
+mainExtLinesStyle = input.string("Dashed","Ext. Style:", options=["Solid", "Dashed", "Dotted"],inline = "exMain lines:", group = "Customizations")
+mainExtLinesWidth = input.int(1,"Width:",inline = "exMain lines:", group = "Customizations")
+lmainColor = input.color(color.red,"Low DR Color:", inline = "lMain lines:", group = "Customizations")
+lmainLebelTextCol = input.color(color.white,"Label Text color:", inline = "lMain lines:", group = "Customizations")
+lmainExtLinesStyle = input.string("Dashed","Ext. Style:", options=["Solid", "Dashed", "Dotted"],inline = "lexMain lines:", group = "Customizations")
+lmainExtLinesWidth = input.int(1,"Width:",inline = "lexMain lines:", group = "Customizations")
+BoxiDR = input(false, "Apply box on iDR range instead on DR", group = "Customizations")
+BoxColor = input(color.rgb(0, 187, 212, 75),"Color of box", inline = "box", group = "Customizations")
+BoxColorDir = input(false, "Color box according to direction", inline = "box", group = "Customizations", tooltip = "This option will auto color the box according to open/close price of the range (green/red).")
+showFibo = input(true,"Show fibo levels according to DR (0.5 step)", tooltip = "It will be visible till next DR session",group = "Fibonacci levels")
+useDRforFibo = input(true, "Apply fibo levels to DR instead of iDR range")
+FiboColor = input(color.rgb(196, 196, 196),"Fibo lines Color:",inline = "Fibo lines:")
+FiboLineStyle = input.string("Solid","Style:", options=["Solid", "Dashed", "Dotted"],inline = "Fibo lines:")
+FiboLineWidth = input.int(1,"Width:",inline = "Fibo lines:")
+showBreaches = input(true,"Show labels for breaches of DR", group = "Breaches")
+BreachThreshold = input.float(0.0, "Threshold for breaches", group = "Breaches", tooltip = "This option will add threshold in % for breach of DR. It will affect breach alerts to.")
+BreachLabelColor1 = color.lime
+BreachLabelColor2 = color.red   
+UseWick = input(false,"Use wick of candles for breaches the DR to")
+
+
+//Check TF for default values of ranges
+//DR
+if timeframe.period == "5" and TimeMain == "0930-1030"
+    TimeMain := "0930-1025"
+if timeframe.period == "1" and TimeMain == "0930-1030"
+    TimeMain := "0930-1029"
+if timeframe.period == "2" and TimeMain == "0930-1030"
+    TimeMain := "0930-1028"
+if timeframe.period == "3" and TimeMain == "0930-1030"
+    TimeMain := "0930-1027"
+if timeframe.period == "4" and TimeMain == "0930-1030"
+    TimeMain := "0930-1026"
+if timeframe.period == "10" and TimeMain == "0930-1030"
+    TimeMain := "0930-1020"
+if timeframe.period == "15" and TimeMain == "0930-1030"
+    TimeMain := "0930-1015"
+if timeframe.period == "30" and TimeMain == "0930-1030"
+    TimeMain := "0930-1000"
+//oDR
+if timeframe.period == "5" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0355"
+if timeframe.period == "2" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0358"
+if timeframe.period == "3" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0357"
+if timeframe.period == "4" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0356"
+if timeframe.period == "1" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0359"
+if timeframe.period == "10" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0350"
+if timeframe.period == "15" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0345"
+if timeframe.period == "30" and TimeEarly == "0300-0400"
+    TimeEarly := "0300-0330"
+//aDR
+if timeframe.period == "5" and TimeADR == "1930-2030"
+    TimeADR := "1930-2025"
+if timeframe.period == "1" and TimeADR == "1930-2030"
+    TimeADR := "1930-2029"
+if timeframe.period == "2" and TimeADR == "1930-2030"
+    TimeADR := "1930-2028"
+if timeframe.period == "3" and TimeADR == "1930-2030"
+    TimeADR := "1930-2027"
+if timeframe.period == "4" and TimeADR == "1930-2030"
+    TimeADR := "1930-2026"
+if timeframe.period == "10" and TimeADR == "1930-2030"
+    TimeADR := "1930-2020"
+if timeframe.period == "15" and TimeADR == "1930-2030"
+    TimeADR := "1930-2015"
+if timeframe.period == "30" and TimeADR =="1930-2030"
+    TimeADR := "1930-2000"
+
+
+
+
+ny = TimeMain + ":1234567"
+nye = TimeEarly + ":1234567"
+nya = TimeADR + ":1234567"
+
+mainLineS = line.style_solid
+if mainExtLinesStyle == "Solid"
+    mainLineS := line.style_solid
+if mainExtLinesStyle == "Dashed"
+    mainLineS := line.style_dashed
+if mainExtLinesStyle == "Dotted"
+    mainLineS := line.style_dotted
+lmainLineS = line.style_solid
+if lmainExtLinesStyle == "Solid"
+    lmainLineS := line.style_solid
+if lmainExtLinesStyle == "Dashed"
+    lmainLineS := line.style_dashed
+if lmainExtLinesStyle == "Dotted"
+    lmainLineS := line.style_dotted
+fibLineS = line.style_solid
+if FiboLineStyle == "Solid"
+    fibLineS := line.style_solid
+if FiboLineStyle == "Dashed"
+    fibLineS := line.style_dashed
+if FiboLineStyle == "Dotted"
+    fibLineS := line.style_dotted
+
+is_newbar(sess) =>
+    t = time("D", sess, "America/New_York")
+    na(t[1]) and not na(t) or t[1] < t
+
+is_session(sess) =>
+    not na(time(timeframe.period, sess, "America/New_York"))
+
+nyNewbar = is_newbar(ny)
+nySession = is_session(ny)
+nyeSession = is_session(nye)
+nyaSession = is_session(nya)
+
+var line DRhighE = na
+var line DRlowE = na
+var line IDRhighE = na
+var line IDRlowE = na
+
+var line eDRhighE = na
+var line eDRlowE = na
+var line eIDRhighE = na
+var line eIDRlowE = na
+
+var line Fibo05 = na
+
+var label Fibo05T = na
+
+
+var box drBox = na
+
+startBar = false
+endBar = false
+DRhighText = ""
+DRlowText = ""
+iDRhighText = ""
+iDRlowText = ""
+DRdirection = "UP"
+DRrangeL = "DR Range"
+iDRrangeL = "iDR Range"
+DRdirectionL = "DR Direction"
+DRcloseL = "DR close"
+DRopenL = "DR open"
+DRhighL = "DR high"
+DRlowL = "DR low"
+iDRhighL = "iDR high"
+iDRlowL = "iDR low"
+
+
+
+
+
+//DR Calc
+if barstate.isconfirmed
+    if nyeSession[1] == false and nyeSession and showEarly and nySession == false and nyaSession == false
+        startBar := true
+    else
+        if nyeSession == false and nyeSession[1] and showEarly and nySession == false and nyaSession == false
+            endBar := true
+            DRhighText := "oDR high"
+            DRlowText := "oDR low"
+            iDRhighText := "oiDR high"
+            iDRlowText := "oiDR low"
+            DRrangeL := "oDR range"
+            iDRrangeL := "oiDR Range"
+            DRdirectionL := "oDR Direction"
+            DRcloseL := "oDR close"
+            DRopenL := "oDR open"
+            DRhighL := "oDR high"
+            DRlowL := "oDR low"
+            iDRhighL := "oiDR high"
+            iDRlowL := "oiDR low"
+    if nySession[1] == false and nySession and showMain and nyeSession == false and nyaSession == false
+        startBar := true
+    else
+        if nySession == false and nySession[1] and showMain and nyeSession == false and nyaSession == false
+            endBar := true
+            DRhighText := "DR high"
+            DRlowText := "DR low"
+            iDRhighText := "iDR high"
+            iDRlowText := "iDR low"
+    if nyaSession[1] == false and nyaSession and showADR and nySession == false and nyeSession == false
+        startBar := true
+    else
+        if nyaSession == false and nyaSession[1] and showADR and nySession == false and nyeSession == false
+            endBar := true
+            DRhighText := "aDR high"
+            DRlowText := "aDR low"
+            iDRhighText := "aiDR high"
+            iDRlowText := "aiDR low"
+            DRrangeL := "aDR range"
+            iDRrangeL := "aiDR Range"
+            DRdirectionL := "aDR Direction"
+            DRcloseL := "aDR close"
+            DRopenL := "aDR open"
+            DRhighL := "aDR high"
+            DRlowL := "aDR low"
+            iDRhighL := "aiDR high"
+            iDRlowL := "aiDR low"
+
+
+FirstBar = ta.barssince(startBar)
+LastBar = ta.barssince(endBar)+1
+
+var label StartingSessionLabel = na
+
+if startBar
+    StartingSessionLabel := label.new(bar_index,high,text='',color=color.lime,style=label.style_circle,size = size.auto)
+
+if barstate.isconfirmed and endBar
+    DRopen = open[FirstBar]
+    DRclose = close
+    HH = high
+    LL = low
+    HHidr = close
+    LLidr = open
+    if close > open
+        HHidr := close
+        LLidr := open
+    else
+        HHidr := open
+        LLidr := close
+    for i = 1 to FirstBar
+        if high[i] > HH
+            HH := high[i]
+        if low[i] < LL
+            LL := low[i]
+        if close[i] > open[i] and close[i] > HHidr
+            HHidr := close[i]
+        if close[i] < open[i] and open[i] > HHidr
+            HHidr := open[i]
+        if close[i] > open[i] and open[i] < LLidr
+            LLidr := open[i]
+        if close[i] < open[i] and close[i] < LLidr
+            LLidr := close[i]
+        
+    DRhigh = line.new(bar_index[FirstBar], HH,bar_index,HH,color=color.yellow,style=line.style_solid,width=mainExtLinesWidth)
+    DRlow = line.new(bar_index[FirstBar], LL,bar_index,LL,color=color.yellow,style=line.style_solid,width=lmainExtLinesWidth)
+    IDRhigh = line.new(bar_index[FirstBar], HHidr,bar_index,HHidr,color=mainColor,style=line.style_dotted,width=mainExtLinesWidth)
+    IDRlow = line.new(bar_index[FirstBar], LLidr,bar_index,LLidr,color=lmainColor,style=line.style_dotted,width=lmainExtLinesWidth)
+    if showDRlabels
+        DRhighLabel = label.new(bar_index[FirstBar],HH,text=DRhighText,size=size.small,color=mainColor,style=label.style_label_right,textcolor=mainLebelTextCol)
+        DRlowLabel = label.new(bar_index[FirstBar],LL,text=DRlowText,size=size.small,color=lmainColor,style=label.style_label_right,textcolor=lmainLebelTextCol)
+    if showDRlabels == false and showDRtexts
+        DRhighLabelT = label.new(bar_index[FirstBar-5],HH,text=DRhighText,size=size.small,color=mainColor,style=label.style_none,textcolor=mainColor)
+        DRlowLabelT = label.new(bar_index[FirstBar-5],LL,text=DRlowText,size=size.small,color=lmainColor,style=label.style_none,textcolor=lmainColor)
+    if showDRtexts
+        IDRhighLabel = label.new(bar_index[FirstBar+3],HHidr,text=iDRhighText,size=size.small,color=color.rgb(61, 61, 61),style=label.style_none,textcolor=mainColor)
+        IDRlowLabel = label.new(bar_index[FirstBar+3],LLidr,text=iDRlowText,size=size.small,color=color.rgb(61, 61, 61),style=label.style_none,textcolor=lmainColor)
+    
+    if showExtLines
+        DRhighE := line.new(bar_index[1], HH,bar_index,HH,extend = extend.right,color=mainColor,style=mainLineS,width=mainExtLinesWidth)
+        DRlowE := line.new(bar_index[1], LL,bar_index,LL,extend = extend.right,color=lmainColor,style=lmainLineS,width=lmainExtLinesWidth)
+        IDRhighE := line.new(bar_index[1], HHidr,bar_index,HHidr,extend = extend.right,color=mainColor,style=line.style_dotted,width=mainExtLinesWidth)
+        IDRlowE := line.new(bar_index[1], LLidr,bar_index,LLidr,extend = extend.right,color=lmainColor,style=line.style_dotted,width=lmainExtLinesWidth)
+    
+    HfiboVal = HHidr
+    LfiboVal = LLidr
+    if useDRforFibo
+        HfiboVal := HH
+        LfiboVal := LL
+    if showFibo
+        Fibo05 := line.new(bar_index[1], (HfiboVal+LfiboVal)/2,bar_index,(HfiboVal+LfiboVal)/2,extend = extend.right,color=color.yellow,style=fibLineS,width=FiboLineWidth)
+
+
+        fTextPos = bar_index[1]
+        fTextXloc = xloc.bar_index
+        //if FiboPosRight
+        //    fTextPos := time + 197 * (time - time[1])
+        //    fTextXloc := xloc.bar_time
+        
+        Fibo05T := label.new(fTextPos, (HfiboVal+LfiboVal)/2, "0.5  -          "+str.tostring(line.get_price(Fibo05, bar_index)), xloc = fTextXloc,  style = label.style_none,textcolor=color.yellow)
+
+    
+    
+    DRperc = math.round((HH-LL)/(LL/100), 3)
+    iDRperc = math.round((HHidr-LLidr)/(LLidr/100), 3)
+    if DRopen > DRclose
+        DRdirection := "DOWN"
+        DRperc := math.round((HH-LL)/(HH/100), 3)
+        iDRperc := math.round((HHidr-LLidr)/(HHidr/100), 3)
+
+    if BoxColorDir
+        if DRdirection == "UP"
+            BoxColor := color.rgb(51, 148, 54, 75)
+        else
+            BoxColor := color.rgb(255, 66, 66, 75)
+    if BoxiDR
+        drBox := box.new(bar_index[FirstBar],HHidr,bar_index,LLidr,border_color = na,bgcolor = BoxColor)
+        
+    else
+        drBox := box.new(bar_index[FirstBar],HH,bar_index,LL,border_color = na,bgcolor = BoxColor)
+        
+
+
+
+    
+//Clear
+if endBar
+    label.delete(StartingSessionLabel[1])
+if startBar
+    //box.delete(drBox[1])
+    eDRhighE := line.copy(DRhighE[1])
+    eDRlowE := line.copy(DRlowE[1])
+    eIDRhighE := line.copy(IDRhighE[1])
+    eIDRlowE := line.copy(IDRlowE[1])
+    line.set_extend(eDRhighE,extend.none)
+    line.set_extend(eDRlowE,extend.none)
+    line.set_extend(eIDRhighE,extend.none)
+    line.set_extend(eIDRlowE,extend.none)
+    line.set_x2(eDRhighE,bar_index[1])
+    line.set_x2(eDRlowE,bar_index[1])
+    line.set_x2(eIDRhighE,bar_index[1])
+    line.set_x2(eIDRlowE,bar_index[1])
+
+    line.delete(DRhighE[1])
+    line.delete(DRlowE[1])
+    line.delete(IDRhighE[1])
+    line.delete(IDRlowE[1])
+    
+    line.delete(Fibo05[1])
+
+    label.delete(Fibo05T[1])
+
+
+//Breaches check
+UPLabel = false
+DOWNLabel = false
+BreachBackUP = false
+BreachBackDown = false
+BreachesUP = 0
+BreachesDown = 0
+BreachUPYes = "NO"
+BreachDownYes = "NO"
+if barstate.isconfirmed and nySession == false and nyaSession == false and nyeSession == false
+    HHcheck = high[LastBar-1]
+    LLcheck = low[LastBar-1]
+    HHidrcheck = close[LastBar-1]
+    LLidrcheck = open[LastBar-1]
+    if close[LastBar-1] > open[LastBar-1]
+        HHidrcheck := close[LastBar-1]
+        LLidrcheck := open[LastBar-1]
+    else
+        HHidrcheck := open[LastBar-1]
+        LLidrcheck := close[LastBar-1]
+    
+    for i = 0 to FirstBar-LastBar
+        if high[LastBar+i] > HHcheck
+            HHcheck := high[LastBar+i]
+        if low[LastBar+i] < LLcheck
+            LLcheck := low[LastBar+i]
+        if close[LastBar+i] > open[LastBar+i] and close[LastBar+i] > HHidrcheck
+            HHidrcheck := close[LastBar+i]
+        if close[LastBar+i] < open[LastBar+i] and open[LastBar+i] > HHidrcheck
+            HHidrcheck := open[LastBar+i]
+        if close[LastBar+i] > open[LastBar+i] and open[LastBar+i] < LLidrcheck
+            LLidrcheck := open[LastBar+i]
+        if close[LastBar+i] < open[LastBar+i] and close[LastBar+i] < LLidrcheck
+            LLidrcheck := close[LastBar+i]
+        
+    if UseWick
+        if high > (HHcheck + ((HHcheck/100)*BreachThreshold)) and high[1] <= HHcheck
+            UPLabel := true
+        if low < (LLcheck - ((LLcheck/100)*BreachThreshold)) and low[1] >= LLcheck
+            DOWNLabel := true
+    else
+        if close > (HHcheck + ((HHcheck/100)*BreachThreshold)) and close[1] <= HHcheck
+            UPLabel := true
+        if close < (LLcheck - ((LLcheck/100)*BreachThreshold)) and close[1] >= LLcheck
+            DOWNLabel := true
+       
+    for i = 0 to LastBar
+        if UseWick
+            if high[i] > (HHcheck + ((HHcheck/100)*BreachThreshold)) and high[i+1] <= HHcheck
+                BreachesUP := BreachesUP+1
+            if low[i] < (LLcheck - ((LLcheck/100)*BreachThreshold)) and low[i+1] >= LLcheck
+                BreachesDown := BreachesDown+1
+        else
+            if close[i] > (HHcheck + ((HHcheck/100)*BreachThreshold)) and close[i+1] <= HHcheck
+                BreachesUP := BreachesUP+1
+            if close[i] < (LLcheck - ((LLcheck/100)*BreachThreshold)) and close[i+1] >= LLcheck
+                BreachesDown := BreachesDown+1       
+
+    if close < (HHcheck) and close[1] > HHcheck
+        BreachBackUP := true
+    if close > (LLcheck) and close[1] < LLcheck
+        BreachBackDown := true
+
+
+//Filter 
+
+
+
+
+
+//------------------------------------------------------------------------------
+filter_adx= input.bool(true, title = "ADX Filter")
+adx_Thresh = input.int(20, title = 'ADX Threshold')
+adxlen = input(14, title="ADX Smoothing")
+dilen = input(14, title="DI Length")
+dirmov(len) =>
+	up = ta.change(high)
+	down = -ta.change(low)
+	plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
+	minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+	truerange = ta.rma(ta.tr, len)
+	plus = fixnan(100 * ta.rma(plusDM, len) / truerange)
+	minus = fixnan(100 * ta.rma(minusDM, len) / truerange)
+	[plus, minus]
+adx(dilen, adxlen) =>
+	[plus, minus] = dirmov(dilen)
+	sum = plus + minus
+	adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen)
+sig = adx(dilen, adxlen)
+
+
+
+
+///WADDAH LEVELS
+
+
+enableLong = input.bool(false, group='Waddah Hidden Levels',title = "Enable Long Alert", tooltip = 'Currently SL is hard coded to mid line of DR and Profit is selectable below. Set that before activating alert')
+enableShort = input.bool(false, title = "Enable Short Alert")
+enableBreak = input.bool(false, title ="Trigger for Break Even Alert")
+
+
+greencolor = #2DD204
+redcolor = #D2042D 
+bluecolor = #042dd2
+
+lightgreencolor = #D2042D 
+lightredcolor =  #DF4F6C
+
+darkGreenColor =  #1B7E02 
+darkRedColor = #93021F
+darkBlueColor = #021f93
+
+f_tickFormat() =>
+    _s = str.tostring(syminfo.mintick)
+    _s := str.replace_all(_s, '25', '00')
+    _s := str.replace_all(_s, '5', '0')
+    _s := str.replace_all(_s, '1', '0')
+    _s
+    
+tfInMinutes(simple string tf = "") =>
+    float chartTf =
+      timeframe.multiplier * (
+      timeframe.isseconds ? 1. / 60             :
+      timeframe.isminutes ? 1.                  :
+      timeframe.isdaily   ? 60. * 24            :
+      timeframe.isweekly  ? 60. * 24 * 7        :
+      timeframe.ismonthly ? 60. * 24 * 30.4375  : na)
+    float result = tf == "" ? chartTf : request.security(syminfo.tickerid, tf, chartTf)
+    
+float chartTFInMinutes = tfInMinutes()
+
+if chartTFInMinutes > 60
+    runtime.error("Error: Invalid timerame. This indicaator only works on timeframes 1 hour and below.")
+
+multiplier = input.float(0.5, "Fibonacci Multiplier", minval = 0.0, step = 0.01)
+
+_close1 = request.security(syminfo.tickerid, "D", close[1], barmerge.gaps_off, barmerge.lookahead_on)
+//_close2 = request.security(syminfo.tickerid, "D", close[2], barmerge.gaps_off, barmerge.lookahead_on)
+//_close3 = request.security(syminfo.tickerid, "D", close[3], barmerge.gaps_off, barmerge.lookahead_on)
+_open1 = request.security(syminfo.tickerid, "D", open[1], barmerge.gaps_off, barmerge.lookahead_on)
+_high1 = request.security(syminfo.tickerid, "D", high[1], barmerge.gaps_off, barmerge.lookahead_on)
+_low1 = request.security(syminfo.tickerid, "D", low[1], barmerge.gaps_off, barmerge.lookahead_on)
+
+c1 = 0.0, c2 = 0.0
+
+if(_close1 >= _open1)
+    c1 := (_high1 - _close1) / 2 + _close1
+    c2 := (_open1 - _low1) / 2 + _low1
+
+else
+    c1 := (_high1 - _open1) / 2 + _open1  
+    c2 := (_close1 - _low1) / 2 + _low1 
+    
+topBuffer = c1
+bottomBuffer = c2
+midBuffer = (c1 + c2) / 2
+upBoundaryBuffer = c1 + (c1 - c2) * multiplier
+dnBoundaryBuffer = c2 - (c1 - c2) * multiplier
+
+string profit = input.string("MID", "Profit Target", options = ["TOP", "BOTTOM", "MID", "UPPER", "LOWER"])
+
+float profit_target = switch profit
+	"TOP" => topBuffer
+	"BOTTOM" => bottomBuffer
+	"MID" => midBuffer
+    "UPPER" => upBoundaryBuffer
+    "LOWER" => dnBoundaryBuffer
+	// Default used when the three first cases do not match.
+	=> midBuffer
+
+
+plot(topBuffer, color = redcolor, linewidth = 2, style = plot.style_circles)
+plot(bottomBuffer, color = greencolor, linewidth = 2, style = plot.style_circles)
+plot(midBuffer, color = color.white, linewidth = 1, style = plot.style_circles)
+up = plot(upBoundaryBuffer, color = bluecolor, linewidth = 2, style = plot.style_circles)
+dn = plot(dnBoundaryBuffer, color = bluecolor, linewidth = 2, style = plot.style_circles)
+
+fill(up, dn, color.new(color.gray, 98))
+
+topBufferLabel = 
+     label.new(x=bar_index[1] + 5, 
+         y = topBuffer, 
+         textalign = text.align_center, 
+         color = darkRedColor,
+         textcolor = color.white, 
+         text= str.tostring(topBuffer, f_tickFormat()), 
+         size=size.normal, 
+         style=label.style_label_left)  
+
+bottomBufferLabel = 
+     label.new(x=bar_index[1] + 5, 
+         y = bottomBuffer, 
+         textalign = text.align_center, 
+         color = darkGreenColor,
+         textcolor = color.white, 
+         text= str.tostring(bottomBuffer, f_tickFormat()),
+         size=size.normal, 
+         style=label.style_label_left)  
+         
+midBufferLabel = 
+     label.new(x=bar_index[1] + 5, 
+         y = midBuffer, 
+         textalign = text.align_center, 
+         color = color.white,
+         textcolor = bluecolor, 
+         text= str.tostring(midBuffer, f_tickFormat()), 
+         size=size.normal, 
+         style=label.style_label_left) 
+         
+upBoundaryBufferLabel = 
+     label.new(x=bar_index[1] + 5, 
+         y = upBoundaryBuffer, 
+         textalign = text.align_center, 
+         color = darkBlueColor,
+         textcolor = color.white, 
+         text= str.tostring(upBoundaryBuffer, f_tickFormat()) + " (" + str.tostring(multiplier, "#.###") + ")", 
+         size=size.normal, 
+         style=label.style_label_left) 
+         
+dnBoundaryBufferLabel = 
+     label.new(x=bar_index[1] + 5, 
+         y = dnBoundaryBuffer, 
+         textalign = text.align_center, 
+         color = darkBlueColor,
+         textcolor = color.white, 
+         text= str.tostring(dnBoundaryBuffer, f_tickFormat()) + " (" + str.tostring(multiplier, "#.###") + ")",
+         size=size.normal, 
+         style=label.style_label_left) 
+         
+label.delete(topBufferLabel[1])
+label.delete(bottomBufferLabel[1])
+label.delete(midBufferLabel[1])
+label.delete(upBoundaryBufferLabel[1])
+label.delete(dnBoundaryBufferLabel[1])
+
+//----------------------------------------------------------------------------------------------------
+
+import HeWhoMustNotBeNamed/RecursiveAlerts/2 as ra
+keys = array.from("{ticker}","{entry}", "{stop}", "{target}")
+template = '{\n
+         \t"ticker" : {ticker},\n
+         \t"entry" : {entry},\n
+         \t"stop" : {stop},\n
+         \t"target" : {target},\n
+      
+     }'
+
+//alert
+alert_Long(entry_price, stop_loss,  take_profit2)=>
+
+    inputTemplate = input.text_area(template, 'Long Alert')
+    ticker= syminfo.ticker
+    entry = entry_price
+    stop = stop_loss
+    target = take_profit2
+    values = array.from(str.tostring(ticker),str.tostring(math.round(entry,6)), str.tostring(math.round(stop,6)), str.tostring(math.round(target,6)))
+    LongalertMessage = ra.updateAlertTemplate(inputTemplate, keys, values)
+    alert(LongalertMessage, alert.freq_once_per_bar_close)
+
+
+alert_Short(entry_price, stop_loss,  take_profit2)=>
+
+    inputTemplate = input.text_area(template, 'Short Alert')
+    ticker= syminfo.ticker
+    entry = entry_price
+    stop = stop_loss
+    target = take_profit2
+    values = array.from(str.tostring(ticker),str.tostring(math.round(entry,6)), str.tostring(math.round(stop,6)), str.tostring(math.round(target,6)))
+    ShortalertMessage = ra.updateAlertTemplate(inputTemplate, keys, values)
+    alert(ShortalertMessage, alert.freq_once_per_bar_close)
+	
+alert_ExitL(entry_price, stop_loss,  take_profit2) =>
+    ticker= syminfo.ticker
+    entry = entry_price
+    stop = stop_loss
+    target = take_profit2
+    inputTemplate = input.text_area(template, 'Long Break Even')
+    values = array.from(str.tostring(ticker) ,str.tostring(math.round(entry,6)), str.tostring(math.round(stop,6)), str.tostring(math.round(target,6)))
+    ExitalertMessage = ra.updateAlertTemplate(inputTemplate, keys, values)
+    alert(ExitalertMessage, alert.freq_once_per_bar_close)	
+
+alert_ExitS(entry_price, stop_loss,  take_profit2) =>
+    ticker= syminfo.ticker
+    entry = entry_price
+    stop = stop_loss
+    target = take_profit2
+    inputTemplate = input.text_area(template, 'Short Break Even')
+    values = array.from(str.tostring(ticker) ,str.tostring(math.round(entry,6)), str.tostring(math.round(stop,6)), str.tostring(math.round(target,6)))
+    ExitalertMessage = ra.updateAlertTemplate(inputTemplate, keys, values)
+    alert(ExitalertMessage, alert.freq_once_per_bar_close)	
+
+
+longC = enableLong and UPLabel
+shortC = enableShort and DOWNLabel
+
+if filter_adx
+    longC := longC and sig >= adx_Thresh
+    shortC := shortC and sig >= adx_Thresh
+
+
+plotshape(longC , title="Breach UP Label", text="", style=shape.triangleup, location=location.belowbar,size = size.small, color=BreachLabelColor1, textcolor=color.white)   
+plotshape(shortC, title="Breach DOWN Label", text="", style=shape.triangledown, location=location.abovebar, size = size.small, color=BreachLabelColor2, textcolor=color.white)   
+
+var int inLong = na
+var int inShort = na
+var int quad1 = na
+var int quad2 = na
+var int quad3 = na
+var int quad4 = na
+var int quadm = na
+var float tp = na
+
+
+
+///QUAD 2////
+if line.get_price(DRhighE,bar_index) < midBuffer and line.get_price(DRlowE, bar_index) > bottomBuffer 
+    quad1 :=0
+    quad2 :=0
+    quad3 := 0 
+    quad4 := 0
+    quadm := 0
+    quad2 := 1
+
+    if longC and enableLong and quad2 == 1 
+        tp := high >     midBuffer?topBuffer:midBuffer
+        inLong := 0
+        inShort := 0
+        inLong := 1
+        alert_Long(close,line.get_price(Fibo05, bar_index),tp)
+
+    if shortC and enableShort and quad2 
+        tp := low < bottomBuffer?dnBoundaryBuffer:bottomBuffer
+        inLong :=0
+        inShort := 0
+        inShort := 1
+        alert_Short(close,line.get_price(Fibo05, bar_index) , tp)  
+
+    if inLong ==1 and ta.cross(close ,(ta.valuewhen(longC, close,0)+tp)/2) and enableBreak
+        alert_ExitL(close,close,close)    
+
+    if inShort==1 and ta.cross( close, (ta.valuewhen(shortC, close, 0)+tp)/2) and enableBreak
+        alert_ExitS(close,close,close)
+
+///QUAD1 ////
+if line.get_price(DRhighE,bar_index) <  topBuffer and line.get_price(DRlowE, bar_index) >  midBuffer
+    quad1 :=0
+    quad2 :=0
+    quad1 := 1
+    quadm := 0    
+    quad3 := 0 
+    quad4 := 0 
+
+    if longC and enableLong and quad1 == 1 
+        tp := high > topBuffer?upBoundaryBuffer:topBuffer
+        inLong := 0
+        inShort := 0
+        inLong := 1
+        alert_Long(close,line.get_price(Fibo05, bar_index),tp )
+
+    if shortC and enableShort and quad1 == 1 
+        tp :=  low < midBuffer? bottomBuffer:midBuffer
+        inLong :=0
+        inShort := 0
+        inShort := 1
+        alert_Short(close,line.get_price(Fibo05, bar_index) , tp)
+
+    if inLong ==1 and ta.cross(close ,(ta.valuewhen(longC, close,0)+tp)/2) and enableBreak
+        alert_ExitL(close,close,close)    
+
+    if inShort==1 and ta.cross( close, (ta.valuewhen(shortC, close, 0)+tp)/2) and enableBreak
+        alert_ExitS(close,close,close)
+
+
+////////QUAD MID
+if  midBuffer <    line.get_price(DRhighE,bar_index) and  midBuffer > line.get_price(DRlowE, bar_index) 
+    quad1 :=0
+    quad2 :=0
+    quad1 := 0
+    quadm := 1
+    quad4 := 0 
+    quad3 := 0 
+
+
+    if longC and enableLong and quadm == 1 
+        tp := high > topBuffer?upBoundaryBuffer:topBuffer
+        inLong := 0
+        inShort := 0
+        inLong := 1
+        alert_Long(close,line.get_price(Fibo05, bar_index), tp)
+
+    if shortC and enableShort and quadm == 1 
+        tp :=  low <  bottomBuffer?dnBoundaryBuffer:bottomBuffer
+        inLong :=0
+        inShort := 0
+        inShort := 1
+        alert_Short(close,line.get_price(Fibo05, bar_index) , tp)  
+
+
+    if inLong ==1 and ta.cross(close ,(ta.valuewhen(longC, close,0)+tp)/2) and enableBreak
+        alert_ExitL(close,close,close)    
+
+    if inShort==1 and ta.cross( close, (ta.valuewhen(shortC, close, 0)+tp)/2) and enableBreak
+        alert_ExitS(close,close,close)
+
+
+
+///Quad 4
+
+
+if  line.get_price(DRhighE,bar_index) < bottomBuffer //and   line.get_price(DRlowE, bar_index) 
+    quad1 :=0
+    quad2 :=0
+    quadm := 0
+    quad4 := 0 
+    quad3 := 0
+    quad4 := 1 
+
+
+    if longC and enableLong and quad4 == 1 
+        tp := high > bottomBuffer?midBuffer:bottomBuffer
+        inLong := 0
+        inShort := 0
+        inLong := 1
+        alert_Long(close,line.get_price(Fibo05, bar_index),tp )
+
+    if shortC and enableShort and quad4 == 1 
+        tp := dnBoundaryBuffer
+        inLong :=0
+        inShort := 0
+        inShort := 1
+        alert_Short(close,line.get_price(Fibo05, bar_index) ,dnBoundaryBuffer)    
+
+
+    if inLong ==1 and ta.cross(close ,(ta.valuewhen(longC, close,0)+tp)/2) and enableBreak
+        alert_ExitL(close,close,close)    
+
+    if inShort==1 and ta.cross( close, (ta.valuewhen(shortC, close, 0)+tp)/2) and enableBreak
+        alert_ExitS(close,close,close)
+
+
+
+//QUAD 3 
+
+bool beLongTrigger = false
+bool beShortTrigger = false
+
+if  line.get_price(DRlowE,bar_index) < topBuffer //and   line.get_price(DRlowE, bar_index) 
+    quad1 :=0
+    quad2 :=0
+    quadm := 0
+    quad4 := 0 
+    quad3 := 0
+    quad3 := 1
+
+
+    if longC and enableLong and quad4 == 3 
+        tp := upBoundaryBuffer
+        inLong := 0
+        inShort := 0
+        inLong := 1
+        alert_Long(close,line.get_price(Fibo05, bar_index),upBoundaryBuffer)
+
+    if shortC and enableShort and quad4 == 3 
+        tp :=  low< topBuffer?midBuffer:topBuffer
+        inLong :=0
+        inShort := 0
+        inShort := 1
+        alert_Short(close,line.get_price(Fibo05, bar_index) ,tp )  
+
+    if inLong ==1 and ta.cross(close ,(ta.valuewhen(longC, close,0)+tp)/2) and enableBreak
+        beLongTrigger := true
+        alert_ExitL(close,close,close)    
+
+    if inShort==1 and ta.cross( close, (ta.valuewhen(shortC, close, 0)+tp)/2) and enableBreak
+        beShortTrigger := true
+        alert_ExitS(close,close,close)
+
+
+
+// Send signals to external backtester
+
+import jason5480/external_input_utils/5 as exiu
+
+startLongDeal = enableLong and inLong and not inLong[1]
+startShortDeal = enableShort and inShort and not inShort[1]
+endDealsEnabled = enableBreak // quickly end deal at BE if signals sent
+
+// LOGIC ============================================================================================================
+// Compose the signal that will be passed to the "Template Trailing Strategy" following the "two channel mod div" convention 
+float longChannelComp = 10.0 * (startLongDeal ? 2.0 : 0.0)
+float shortChannelComp = startShortDeal ? 2.0 : 0.0
+
+if endDealsEnabled
+    if enableLong and beLongTrigger
+        longChannelComp := 10
+    if enableShort and beShortTrigger
+        shortChannelComp := 1
+
+// This is the ONLY value that will be passed to the "Template Trailing Strategy" script as External Input
+float signal = longChannelComp + shortChannelComp
+
+
+
+
+// Decompose the produced signal using the same "two channel mod div" convention verify the correctness of the results
+// WARNING! At this point we assume that the "Template Trailiing Strategy" uses the same convention in order to interpret and
+// decode the given signal the same way this indicator does. You might want to check TTS "Settings/Input" tab Startegy - External
+// section. The default strategy settings should match the logic described below. 
+//bool startLongDealDec = exiu.eval_cond(signal, '/10==', 2.0)
+//bool startShortDealDec = exiu.eval_cond(signal, 'mod10==', 2.0)
+
+
+
+// Use this indicator as an external input in scripts like "Template Trailing Strategy" that can utilize the signal value.
+// Emit the current signal value (21, 20, 10, 0, 01, 02, 12, 40, 30, 04, 03).
+plot(series = signal, title = '🔌Signal', color = color.olive, display = display.data_window + display.status_line)
